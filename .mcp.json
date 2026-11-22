@@ -1,11 +1,10 @@
 {
   "mcpServers": {
     "rea": {
-      "command": "npx",
+      "command": "sh",
       "args": [
-        "-y",
-        "rea-agents@6.10.1",
-        "mcp"
+        "-c",
+        "cd /tmp && exec npx -y rea-agents@6.10.1 mcp"
       ]
     }
   }
