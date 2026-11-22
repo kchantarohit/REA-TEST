@@ -56,6 +56,7 @@ import com.google.gson.JsonIOException;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.stream.JsonWriter;
 
 import ghidra.app.util.headless.HeadlessScript;
 import ghidra.app.decompiler.DecompInterface;
@@ -469,7 +470,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
                     ? descriptor.decompileTimeoutSeconds() : request.decompileTimeoutSeconds();
                 valueFlowLimits = request.valueFlowLimits();
                 applyDecompilePayloadLimit(request.decompileMaxPayloadMiB());
-                writeSuccess(writer, request.id, handleRequest(request, descriptor));
+                dispatchAndWrite(writer, request, descriptor);
             }
             catch (RequestFailure failure) {
                 writeFailure(writer, request.id, failure.code, failure.getMessage());
@@ -485,11 +486,14 @@ public final class ReaGhidraBridge extends HeadlessScript {
         }
     }
 
-    private JsonElement handleRequest(Request request, SessionDescriptor descriptor)
-            throws Exception {
+    private void dispatchAndWrite(
+            BufferedWriter writer,
+            Request request,
+            SessionDescriptor descriptor) throws Exception {
         if (request.method.equals("ping")) {
             requireKeys(request.params, Set.of());
-            return sessionInfo(descriptor);
+            writeSuccess(writer, request.id, sessionInfo(descriptor));
+            return;
         }
         if (analysisTimeoutOccurred()) {
             throw new RequestFailure(
@@ -499,6 +503,18 @@ public final class ReaGhidraBridge extends HeadlessScript {
         }
         if (descriptor.existingProject && isMutatingOperation(request.method))
             throw new RequestFailure("method_unavailable", "Existing Ghidra project sessions are read-only");
+        switch (request.method) {
+            case "list_names" -> writeStreamingSuccess(writer, request.id, listNames(request.params));
+            case "list_procedures" -> writeStreamingSuccess(writer, request.id, listProcedures(request.params));
+            case "list_strings" -> writeStreamingSuccess(writer, request.id, listStrings(request.params));
+            case "search_procedures" -> writeStreamingSuccess(writer, request.id, search(request.params, true));
+            case "search_strings" -> writeStreamingSuccess(writer, request.id, search(request.params, false));
+            default -> writeSuccess(writer, request.id, handleRequest(request, descriptor));
+        }
+    }
+
+    private JsonElement handleRequest(Request request, SessionDescriptor descriptor)
+            throws Exception {
         return switch (request.method) {
             case "checkpoint_program" -> checkpointProgram(request.params, descriptor);
             case "read_binary_inventory_summary" -> binaryInventorySummary(request.params);
@@ -508,10 +524,7 @@ public final class ReaGhidraBridge extends HeadlessScript {
             case "address_to_file_offset" -> addressToFileOffset(request.params);
             case "address_name" -> addressName(request.params);
             case "list_documents" -> listDocuments(request.params);
-            case "list_names" -> listNames(request.params);
-            case "list_procedures" -> listProcedures(request.params);
             case "list_segments" -> listSegments(request.params);
-            case "list_strings" -> listStrings(request.params);
             case "procedure_address" -> procedureAddress(request.params);
             case "procedure_assembly" -> procedureAssembly(request.params);
             case "procedure_callees" -> procedureCalls(request.params, false);
@@ -521,8 +534,6 @@ public final class ReaGhidraBridge extends HeadlessScript {
             case "read_function_instructions" -> readFunctionInstructions(request.params);
             case "procedure_references" -> procedureReferences(request.params);
             case "resolve_containing_procedure" -> containingProcedure(request.params);
-            case "search_procedures" -> search(request.params, true);
-            case "search_strings" -> search(request.params, false);
             case "inspect_native_data_type" -> inspectNativeDataType(request.params);
             case "inspect_native_instruction" -> inspectNativeInstruction(request.params, true);
             case "resolve_native_call_targets" -> resolveNativeCallTargets(request.params);
@@ -2567,42 +2578,43 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return count;
     }
 
-    private JsonArray listNames(JsonObject params) throws Exception {
+    private StreamingResult listNames(JsonObject params) throws Exception {
         requireKeys(params, Set.of("document", "address"));
         requireDocument(params);
         String requested = optionalString(params, "address");
+        List<NameEntry> entries;
         if (requested != null) {
             Address address = parseReaAddress(requested);
             if (nameInventory != null) {
-                return nameInventoryJson(sliceAtAddress(nameInventory, NameEntry::address, address));
-            }
-            if (!address.isMemoryAddress() && !address.isExternalAddress()) {
-                return new JsonArray();
-            }
-            List<NameEntry> entries = new ArrayList<>();
-            for (Symbol symbol : currentProgram.getSymbolTable().getSymbols(address)) {
-                monitor.checkCancelled();
-                Address symbolAddress = symbol.getAddress();
-                if (!symbolAddress.isMemoryAddress() && !symbolAddress.isExternalAddress()) {
-                    continue;
+                entries = sliceAtAddress(nameInventory, NameEntry::address, address);
+            } else if (!address.isMemoryAddress() && !address.isExternalAddress()) {
+                entries = List.of();
+            } else {
+                List<NameEntry> found = new ArrayList<>();
+                for (Symbol symbol : currentProgram.getSymbolTable().getSymbols(address)) {
+                    monitor.checkCancelled();
+                    Address symbolAddress = symbol.getAddress();
+                    if (!symbolAddress.isMemoryAddress() && !symbolAddress.isExternalAddress()) {
+                        continue;
+                    }
+                    found.add(new NameEntry(symbolAddress, symbol.getName(true), symbolFacts(symbol)));
                 }
-                entries.add(new NameEntry(symbolAddress, symbol.getName(true), symbolFacts(symbol)));
+                found.sort(NAME_ORDER);
+                entries = found;
             }
-            entries.sort(NAME_ORDER);
-            return nameInventoryJson(entries);
+        } else {
+            entries = names();
         }
-        return nameInventoryJson(names());
+        monitor.checkCancelled();
+        return out -> writeNameEntries(out, entries);
     }
 
-    private JsonArray listProcedures(JsonObject params) throws Exception {
+    private StreamingResult listProcedures(JsonObject params) throws Exception {
         requireKeys(params, Set.of("document"));
         requireDocument(params);
-        JsonArray result = new JsonArray();
-        for (ProcedureEntry entry : procedures()) {
-            monitor.checkCancelled();
-            result.add(resultItem(entry.address(), entry.value(), "procedure", entry.facts(), entry.symbol()));
-        }
-        return result;
+        List<ProcedureEntry> entries = procedures();
+        monitor.checkCancelled();
+        return out -> writeProcedureEntries(out, entries);
     }
 
     private JsonArray listSegments(JsonObject params) {
@@ -2625,24 +2637,25 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return result;
     }
 
-    private JsonArray listStrings(JsonObject params) throws Exception {
+    private StreamingResult listStrings(JsonObject params) throws Exception {
         requireKeys(params, Set.of("document", "address"));
         requireDocument(params);
         String requested = optionalString(params, "address");
+        List<StringEntry> entries;
         if (requested != null) {
             Address address = parseReaAddress(requested);
             if (stringInventory != null) {
-                return stringInventoryJson(sliceAtAddress(stringInventory, StringEntry::address, address));
+                entries = sliceAtAddress(stringInventory, StringEntry::address, address);
+            } else {
+                Data data = currentProgram.getListing().getDefinedDataAt(address);
+                StringEntry entry = data == null ? null : stringEntry(data);
+                entries = entry == null ? List.of() : List.of(entry);
             }
-            JsonArray result = new JsonArray();
-            Data data = currentProgram.getListing().getDefinedDataAt(address);
-            StringEntry entry = data == null ? null : stringEntry(data);
-            if (entry != null) {
-                result.add(resultItem(entry.address(), entry.value(), "string", entry.facts(), null));
-            }
-            return result;
+        } else {
+            entries = strings();
         }
-        return stringInventoryJson(strings());
+        monitor.checkCancelled();
+        return out -> writeStringEntries(out, entries);
     }
 
     private JsonElement procedureAddress(JsonObject params) throws Exception {
@@ -2670,9 +2683,10 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return result;
     }
 
-    private JsonArray search(JsonObject params, boolean procedureSearch) throws Exception {
+    private StreamingResult search(JsonObject params, boolean procedureSearch) throws Exception {
         Set<String> keys = new HashSet<>(Set.of("pattern", "mode", "case_sensitive", "document"));
         if (params.has("literal_ascii_candidate")) keys.add("literal_ascii_candidate");
+        if (params.has("literal_ascii_substring")) keys.add("literal_ascii_substring");
         requireKeys(params, keys);
         requireDocument(params);
         String expression = requireString(params, "pattern");
@@ -2685,42 +2699,40 @@ public final class ReaGhidraBridge extends HeadlessScript {
         if (mode.equals("literal") && !caseSensitive) {
             if (!params.has("literal_ascii_candidate"))
                 throw new RequestFailure("invalid_request", "Insensitive literal search requires an ASCII candidate");
-            matcher = literalCandidateMatcher(optionalString(params, "literal_ascii_candidate"));
+            matcher = literalCandidateMatcher(
+                optionalString(params, "literal_ascii_candidate"),
+                optionalString(params, "literal_ascii_substring")
+            );
         } else {
-            if (params.has("literal_ascii_candidate"))
+            if (params.has("literal_ascii_candidate") || params.has("literal_ascii_substring"))
                 throw new RequestFailure("invalid_request", "ASCII candidate applies only to insensitive literals");
             matcher = mode.equals("literal")
                 ? literalMatcher(expression)
                 : regexMatcher(expression, caseSensitive);
         }
-        JsonArray items = new JsonArray();
         if (procedureSearch) {
             // Search the names exact lookup accepts, keeping one row per
             // procedure under its primary name.
+            List<MatchedProcedure> matches = new ArrayList<>();
             for (ProcedureEntry entry : procedures()) {
                 monitor.checkCancelled();
                 ProcedureNameMatch match = matchProcedureNames(entry, matcher);
                 if (!match.matched()) {
                     continue;
                 }
-                JsonObject item = resultItem(entry.address(), entry.value(), "procedure", entry.facts(), entry.symbol());
-                if (!match.aliases().isEmpty()) {
-                    JsonArray aliases = new JsonArray();
-                    for (String alias : match.aliases()) aliases.add(alias);
-                    item.add("matched_aliases", aliases);
-                }
-                items.add(item);
+                matches.add(new MatchedProcedure(entry, match.aliases()));
             }
-            return items;
+            return out -> writeMatchedProcedures(out, matches);
         }
+        List<StringEntry> matches = new ArrayList<>();
         for (StringEntry entry : strings()) {
             monitor.checkCancelled();
             if (!matcher.matches(entry.value())) {
                 continue;
             }
-            items.add(resultItem(entry.address(), entry.value(), "string", entry.facts(), null));
+            matches.add(entry);
         }
-        return items;
+        return out -> writeStringEntries(out, matches);
     }
 
     /**
@@ -2731,13 +2743,13 @@ public final class ReaGhidraBridge extends HeadlessScript {
      * by their qualified names, sorted.
      */
     private static ProcedureNameMatch matchProcedureNames(ProcedureEntry entry, ValueMatcher matcher) {
-        boolean primary = spellingMatches(entry.leafName(), entry.value(), matcher);
+        boolean primary = spellingMatches(entry.leafName(), entry.value(), entry.leafIsSuffix(), matcher);
         if (entry.aliases().isEmpty()) {
             return new ProcedureNameMatch(primary, List.of());
         }
         List<String> matchedAliases = null;
         for (ProcedureAlias alias : entry.aliases()) {
-            if (!spellingMatches(alias.leaf(), alias.qualified(), matcher)) continue;
+            if (!spellingMatches(alias.leaf(), alias.qualified(), alias.leafIsSuffix(), matcher)) continue;
             if (alias.qualified().equals(entry.value())) {
                 primary = true;
                 continue;
@@ -2750,9 +2762,19 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return new ProcedureNameMatch(primary, matchedAliases == null ? List.of() : matchedAliases);
     }
 
-    /** A leaf is the suffix of its qualified spelling, so a literal found in it is found in both. */
-    private static boolean spellingMatches(String leaf, String qualified, ValueMatcher matcher) {
-        return matcher.matches(qualified) || (!leaf.equals(qualified) && matcher.matches(leaf));
+    /** When a leaf ends its qualified spelling, substring matching on qualified already implies leaf coverage. */
+    private static boolean spellingMatches(
+            String leaf,
+            String qualified,
+            boolean leafIsSuffix,
+            ValueMatcher matcher) {
+        if (matcher.matches(qualified)) {
+            return true;
+        }
+        if (leaf.equals(qualified) || (!matcher.requiresLeafCheck() && leafIsSuffix)) {
+            return false;
+        }
+        return matcher.matches(leaf);
     }
 
     private List<NameEntry> names() throws Exception {
@@ -4675,9 +4697,15 @@ public final class ReaGhidraBridge extends HeadlessScript {
             List.copyOf(computedCallSites));
     }
 
+    private boolean isX86_32Program() {
+        return currentProgram.getDefaultPointerSize() == 4 &&
+            "x86".equalsIgnoreCase(currentProgram.getLanguage().getProcessor().toString());
+    }
+
     private final class FunctionBoundaryLimitations {
         private final Function function;
         private final boolean checkLoaderRelocations = !loaderInitializedRelocations.isEmpty();
+        private final boolean checkBorlandSeh = isX86_32Program();
         private final List<String> limitations = new ArrayList<>();
         private boolean inferredNoReturnCall;
         private final Set<Address> observedLoaderRelocations = new HashSet<>();
@@ -4710,13 +4738,15 @@ public final class ReaGhidraBridge extends HeadlessScript {
                     limitations.add(loaderInitializedRelocationLimitation(relocation));
                 }
             }
-            if (beforePrevious != null && previous != null) {
-                String seh = borlandSehHandlerLimitation(
-                    function, beforePrevious, previous, instruction);
-                if (seh != null) limitations.add(seh);
+            if (checkBorlandSeh) {
+                if (beforePrevious != null && previous != null) {
+                    String seh = borlandSehHandlerLimitation(
+                        function, beforePrevious, previous, instruction);
+                    if (seh != null) limitations.add(seh);
+                }
+                beforePrevious = previous;
+                previous = instruction;
             }
-            beforePrevious = previous;
-            previous = instruction;
         }
 
         private List<String> values() {
@@ -5214,26 +5244,33 @@ public final class ReaGhidraBridge extends HeadlessScript {
 
     private JsonArray referencedStrings(List<Reference> references) throws Exception {
         TreeMap<String, JsonObject> observed = new TreeMap<>();
+        Map<Address, String[]> resolved = new HashMap<>();
+        Listing listing = currentProgram.getListing();
         for (Reference reference : references) {
             monitor.checkCancelled();
-            Data data = currentProgram.getListing().getDefinedDataContaining(
-                reference.getToAddress()
-            );
-            if (data == null || !data.hasStringValue()) {
+            Address target = reference.getToAddress();
+            String[] entry;
+            if (resolved.containsKey(target)) {
+                entry = resolved.get(target);
+            } else {
+                Data data = listing.getDefinedDataContaining(target);
+                String value = data != null && data.hasStringValue()
+                    ? StringDataInstance.getStringDataInstance(data).getStringValue()
+                    : null;
+                entry = value == null ? null : new String[] { canonicalAddress(data.getAddress()), value };
+                resolved.put(target, entry);
+            }
+            if (entry == null) {
                 continue;
             }
-            String value = StringDataInstance.getStringDataInstance(data).getStringValue();
-            if (value == null) {
-                continue;
-            }
+            String sourceAddress = canonicalAddress(reference.getFromAddress());
             JsonObject item = new JsonObject();
-            item.addProperty("address", canonicalAddress(data.getAddress()));
-            item.addProperty("value", value);
-            item.addProperty("source_address", canonicalAddress(reference.getFromAddress()));
-            String key = canonicalAddress(data.getAddress()) + "\u0000" + value + "\u0000" +
-                canonicalAddress(reference.getFromAddress());
+            item.addProperty("address", entry[0]);
+            item.addProperty("value", entry[1]);
+            item.addProperty("source_address", sourceAddress);
+            String key = entry[0] + "\u0000" + entry[1] + "\u0000" + sourceAddress;
             observed.put(key, item);
-            }
+        }
         JsonArray result = new JsonArray();
         observed.values().forEach(result::add);
         return result;
@@ -5241,22 +5278,31 @@ public final class ReaGhidraBridge extends HeadlessScript {
 
     private JsonArray referencedNames(List<Reference> references) throws Exception {
         TreeMap<String, JsonObject> observed = new TreeMap<>();
+        Map<Address, String> resolved = new HashMap<>();
+        SymbolTable symbolTable = currentProgram.getSymbolTable();
         for (Reference reference : references) {
             monitor.checkCancelled();
-            Symbol symbol = currentProgram.getSymbolTable().getPrimarySymbol(
-                reference.getToAddress()
-            );
-            if (symbol == null) {
+            Address target = reference.getToAddress();
+            String name;
+            if (resolved.containsKey(target)) {
+                name = resolved.get(target);
+            } else {
+                Symbol symbol = symbolTable.getPrimarySymbol(target);
+                name = symbol == null ? null : symbol.getName(true);
+                resolved.put(target, name);
+            }
+            if (name == null) {
                 continue;
             }
+            String targetAddress = canonicalAddress(target);
+            String sourceAddress = canonicalAddress(reference.getFromAddress());
             JsonObject item = new JsonObject();
-            item.addProperty("address", canonicalAddress(reference.getToAddress()));
-            item.addProperty("value", symbol.getName(true));
-            item.addProperty("source_address", canonicalAddress(reference.getFromAddress()));
-            String key = canonicalAddress(reference.getToAddress()) + "\u0000" +
-                symbol.getName(true) + "\u0000" + canonicalAddress(reference.getFromAddress());
+            item.addProperty("address", targetAddress);
+            item.addProperty("value", name);
+            item.addProperty("source_address", sourceAddress);
+            String key = targetAddress + "\u0000" + name + "\u0000" + sourceAddress;
             observed.put(key, item);
-            }
+        }
         JsonArray result = new JsonArray();
         observed.values().forEach(result::add);
         return result;
@@ -5651,22 +5697,45 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return value.replaceAll("[\\r\\n]+", " ");
     }
 
-    private JsonArray nameInventoryJson(List<NameEntry> entries) throws Exception {
-        JsonArray result = new JsonArray();
+    private static void writeNameEntries(JsonWriter out, List<NameEntry> entries) throws IOException {
+        out.beginArray();
         for (NameEntry entry : entries) {
-            monitor.checkCancelled();
-            result.add(resultItem(entry.address(), entry.value(), "symbol", entry.facts(), null));
+            writeResultItem(out, entry.address(), entry.value(), "symbol", entry.facts(), null, List.of());
         }
-        return result;
+        out.endArray();
     }
 
-    private JsonArray stringInventoryJson(List<StringEntry> entries) throws Exception {
-        JsonArray result = new JsonArray();
-        for (StringEntry entry : entries) {
-            monitor.checkCancelled();
-            result.add(resultItem(entry.address(), entry.value(), "string", entry.facts(), null));
+    private static void writeProcedureEntries(JsonWriter out, List<ProcedureEntry> entries) throws IOException {
+        out.beginArray();
+        for (ProcedureEntry entry : entries) {
+            writeResultItem(out, entry.address(), entry.value(), "procedure", entry.facts(), entry.symbol(), List.of());
         }
-        return result;
+        out.endArray();
+    }
+
+    private static void writeMatchedProcedures(JsonWriter out, List<MatchedProcedure> matches) throws IOException {
+        out.beginArray();
+        for (MatchedProcedure match : matches) {
+            ProcedureEntry entry = match.entry();
+            writeResultItem(
+                out,
+                entry.address(),
+                entry.value(),
+                "procedure",
+                entry.facts(),
+                entry.symbol(),
+                match.matchedAliases()
+            );
+        }
+        out.endArray();
+    }
+
+    private static void writeStringEntries(JsonWriter out, List<StringEntry> entries) throws IOException {
+        out.beginArray();
+        for (StringEntry entry : entries) {
+            writeResultItem(out, entry.address(), entry.value(), "string", entry.facts(), null, List.of());
+        }
+        out.endArray();
     }
 
     private static <T> List<T> sliceAtAddress(
@@ -5694,23 +5763,35 @@ public final class ReaGhidraBridge extends HeadlessScript {
         return sortedEntries.subList(low, end);
     }
 
-    private static JsonObject resultItem(
+    private static void writeResultItem(
+        JsonWriter out,
         Address address,
         String value,
         String factsName,
         InventoryFacts facts,
-        SymbolFacts symbol
-    ) {
-        JsonObject result = new JsonObject();
-        result.addProperty("address", canonicalAddress(address));
-        result.addProperty("value", value);
+        SymbolFacts symbol,
+        List<String> matchedAliases
+    ) throws IOException {
+        out.beginObject();
+        out.name("address").value(canonicalAddress(address));
+        out.name("value").value(value);
         if (factsName != null) {
-            result.add(factsName, facts.toJson());
+            out.name(factsName);
+            facts.writeJson(out);
         }
         if (symbol != null) {
-            result.add("symbol", symbol.toJson());
+            out.name("symbol");
+            symbol.writeJson(out);
         }
-        return result;
+        if (!matchedAliases.isEmpty()) {
+            out.name("matched_aliases");
+            out.beginArray();
+            for (String alias : matchedAliases) {
+                out.value(alias);
+            }
+            out.endArray();
+        }
+        out.endObject();
     }
 
     private static JsonObject memoryRegion(MemoryBlock block, String imageBase) {
@@ -6003,52 +6084,88 @@ public final class ReaGhidraBridge extends HeadlessScript {
     }
 
     private static ValueMatcher literalMatcher(String pattern) {
-        return value -> value.contains(pattern);
+        return nonLeafMatcher(value -> value.contains(pattern));
+    }
+
+    private static boolean containsNonAscii(String value) {
+        for (int index = 0; index < value.length(); index++) {
+            if (value.charAt(index) > 127) return true;
+        }
+        return false;
+    }
+
+    private static void requireAsciiCandidate(String asciiPattern) {
+        for (int index = 0; index < asciiPattern.length(); index++) {
+            if (asciiPattern.charAt(index) > 127) {
+                throw new RequestFailure("invalid_request", "ASCII candidate contains a non-ASCII character");
+            }
+        }
+    }
+
+    private static boolean containsFoldedAscii(String value, String asciiPattern) {
+        int patternLength = asciiPattern.length();
+        if (patternLength == 0) {
+            return true;
+        }
+        int valueLength = value.length();
+        if (valueLength < patternLength) {
+            return false;
+        }
+        char firstTarget = asciiPattern.charAt(0);
+        int limit = valueLength - patternLength;
+        for (int index = 0; index <= limit; index++) {
+            if (foldAsciiCandidateChar(value.charAt(index)) != firstTarget) {
+                continue;
+            }
+            int matched = 1;
+            while (matched < patternLength &&
+                   foldAsciiCandidateChar(value.charAt(index + matched)) == asciiPattern.charAt(matched)) {
+                matched++;
+            }
+            if (matched == patternLength) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // REA's host owns ECMAScript /iu simple case folding. Across all 1,114,112
     // Unicode code points, only U+017F (ſ -> s) and U+212A (K -> k) fold to
     // ASCII. When asciiPattern is null, the pattern has a non-ASCII char without
-    // an ASCII fold, so only source strings containing non-ASCII stay eligible.
-    private static ValueMatcher literalCandidateMatcher(String asciiPattern) {
+    // an ASCII fold, so only source strings containing non-ASCII (and any
+    // required ASCII-foldable substring) stay eligible.
+    private static ValueMatcher literalCandidateMatcher(String asciiPattern, String asciiSubstring) {
         if (asciiPattern == null) {
-            return value -> {
-                for (int index = 0; index < value.length(); index++) {
-                    if (value.charAt(index) > 127) return true;
-                }
+            if (asciiSubstring == null || asciiSubstring.isEmpty()) {
+                return nonLeafMatcher(value -> containsNonAscii(value));
+            }
+            requireAsciiCandidate(asciiSubstring);
+            return nonLeafMatcher(value ->
+                containsFoldedAscii(value, asciiSubstring) && containsNonAscii(value)
+            );
+        }
+        requireAsciiCandidate(asciiPattern);
+        if (asciiPattern.isEmpty()) {
+            return nonLeafMatcher(value -> true);
+        }
+        return nonLeafMatcher(value -> containsFoldedAscii(value, asciiPattern));
+    }
+
+    private interface StringCheck {
+        boolean test(String value);
+    }
+
+    private static ValueMatcher nonLeafMatcher(StringCheck check) {
+        return new ValueMatcher() {
+            @Override
+            public boolean matches(String value) {
+                return check.test(value);
+            }
+
+            @Override
+            public boolean requiresLeafCheck() {
                 return false;
-            };
-        }
-        int patternLength = asciiPattern.length();
-        for (int index = 0; index < patternLength; index++) {
-            if (asciiPattern.charAt(index) > 127) {
-                throw new RequestFailure("invalid_request", "ASCII candidate contains a non-ASCII character");
             }
-        }
-        if (patternLength == 0) {
-            return value -> true;
-        }
-        char firstTarget = asciiPattern.charAt(0);
-        return value -> {
-            int valueLength = value.length();
-            if (valueLength < patternLength) {
-                return false;
-            }
-            int limit = valueLength - patternLength;
-            for (int index = 0; index <= limit; index++) {
-                if (foldAsciiCandidateChar(value.charAt(index)) != firstTarget) {
-                    continue;
-                }
-                int matched = 1;
-                while (matched < patternLength &&
-                       foldAsciiCandidateChar(value.charAt(index + matched)) == asciiPattern.charAt(matched)) {
-                    matched++;
-                }
-                if (matched == patternLength) {
-                    return true;
-                }
-            }
-            return false;
         };
     }
 
@@ -6289,6 +6406,21 @@ public final class ReaGhidraBridge extends HeadlessScript {
         writeResponse(writer, response);
     }
 
+    private static void writeStreamingSuccess(BufferedWriter writer, int id, StreamingResult result)
+            throws IOException {
+        JsonWriter out = GSON.newJsonWriter(new SurrogateEscapingWriter(writer));
+        out.setSerializeNulls(true);
+        out.beginObject();
+        out.name("id").value(id);
+        out.name("ok").value(true);
+        out.name("result");
+        result.write(out);
+        out.endObject();
+        out.flush();
+        writer.newLine();
+        writer.flush();
+    }
+
     /** Reserved response id for a failure not tied to one parsed request. */
     private static final int CONNECTION_FAILURE_ID = 0;
 
@@ -6433,10 +6565,19 @@ public final class ReaGhidraBridge extends HeadlessScript {
 
     private interface ValueMatcher {
         boolean matches(String value);
+
+        default boolean requiresLeafCheck() {
+            return true;
+        }
+    }
+
+    private interface StreamingResult {
+        void write(JsonWriter out) throws IOException;
     }
 
     private interface InventoryFacts {
         JsonObject toJson();
+        void writeJson(JsonWriter out) throws IOException;
     }
 
     private static int compareInventory(
@@ -6485,6 +6626,17 @@ public final class ReaGhidraBridge extends HeadlessScript {
             facts.addProperty("source", source);
             return facts;
         }
+
+        @Override
+        public void writeJson(JsonWriter out) throws IOException {
+            out.beginObject();
+            out.name("primary").value(primary);
+            out.name("dynamic").value(dynamic);
+            out.name("external").value(external);
+            out.name("type").value(type);
+            out.name("source").value(source);
+            out.endObject();
+        }
     }
 
     private record ProcedureFacts(
@@ -6504,6 +6656,20 @@ public final class ReaGhidraBridge extends HeadlessScript {
             }
             return facts;
         }
+
+        @Override
+        public void writeJson(JsonWriter out) throws IOException {
+            out.beginObject();
+            out.name("external").value(external);
+            out.name("thunk").value(thunk);
+            out.name("thunk_target");
+            if (thunkTarget == null) {
+                out.nullValue();
+            } else {
+                out.value(canonicalAddress(thunkTarget));
+            }
+            out.endObject();
+        }
     }
 
     private record StringFacts(
@@ -6522,19 +6688,48 @@ public final class ReaGhidraBridge extends HeadlessScript {
             facts.addProperty("byte_length", byteLength);
             return facts;
         }
+
+        @Override
+        public void writeJson(JsonWriter out) throws IOException {
+            out.beginObject();
+            out.name("encoding").value(encoding);
+            out.name("termination").value(
+                missingNullTerminator ? "missing" : "present_or_not_required"
+            );
+            out.name("byte_length").value(byteLength);
+            out.endObject();
+        }
     }
 
+    private record MatchedProcedure(ProcedureEntry entry, List<String> matchedAliases) {}
     private record NameEntry(Address address, String value, SymbolFacts facts) {}
-    private record ProcedureAlias(String leaf, String qualified) {}
+    private record ProcedureAlias(String leaf, String qualified, boolean leafIsSuffix) {
+        ProcedureAlias(String leaf, String qualified) {
+            this(leaf, qualified, qualified.endsWith(leaf));
+        }
+    }
     private record ProcedureEntry(
         Function function,
         Address address,
         String value,
         String leafName,
+        boolean leafIsSuffix,
         List<ProcedureAlias> aliases,
         ProcedureFacts facts,
         SymbolFacts symbol
-    ) {}
+    ) {
+        ProcedureEntry(
+            Function function,
+            Address address,
+            String value,
+            String leafName,
+            List<ProcedureAlias> aliases,
+            ProcedureFacts facts,
+            SymbolFacts symbol
+        ) {
+            this(function, address, value, leafName, value.endsWith(leafName), aliases, facts, symbol);
+        }
+    }
     private record StringEntry(Address address, String value, StringFacts facts) {}
     private record AddressNameRequest(String inputAddress, Address address, String name) {}
     private record AddressNameDestination(long namespace, String leaf) {}
