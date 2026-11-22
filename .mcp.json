@@ -4,6 +4,7 @@
       "command": "npx",
       "args": [
         "-y",
+        "--prefix=/",
         "rea-agents@6.10.1",
         "mcp"
       ]
