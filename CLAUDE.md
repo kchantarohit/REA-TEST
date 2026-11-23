@@ -1,3 +1,6 @@
+- **Default Mode (`ponytail`):** Always apply `.claude/skills/ponytail/SKILL.md` by default on every turn to conserve tokens.
+
+
 # REA Team Lead & Smart Task Router
 
 ## Role: Team Lead (Orchestrator)
