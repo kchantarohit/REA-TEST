@@ -17,109 +17,130 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Pulseboard palette: indigo-violet brand, teal for "up/live", coral for "down".
-// Text colours are chosen for >= 4.5:1 contrast on their card/background colours.
+// Swiss utilitarian system: neutral ink on warm paper, one signal accent.
+// Contrast (text on background): light ink 18:1, muted #595955 6.4:1, accent text #C42A10 5.2:1;
+// dark ink 16:1, muted #A3A29D 7.6:1, accent #FF3B1F 5.4:1. Ink on accent fill 5.4:1.
+
+private val Paper = Color(0xFFF4F3EF)
+private val Ink = Color(0xFF0B0B0B)
+private val Signal = Color(0xFFFF3B1F)
+private val SignalDeep = Color(0xFFC42A10)
 
 private val LightColors = lightColorScheme(
-    primary = Color(0xFF4F3FD1),
+    primary = SignalDeep,
     onPrimary = Color(0xFFFFFFFF),
-    primaryContainer = Color(0xFFE4E0FF),
-    onPrimaryContainer = Color(0xFF1A0E6B),
-    inversePrimary = Color(0xFFC3BCFF),
-    secondary = Color(0xFF5C5A7A),
+    primaryContainer = Color(0xFFFCE3DC),
+    onPrimaryContainer = Color(0xFF5A1406),
+    inversePrimary = Signal,
+    secondary = Color(0xFF3A3A37),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFE3E0F7),
-    onSecondaryContainer = Color(0xFF1B1A33),
-    tertiary = Color(0xFF0B7A67),
+    secondaryContainer = Color(0xFFE3E2DC),
+    onSecondaryContainer = Color(0xFF1A1A18),
+    tertiary = Color(0xFF3A3A37),
     onTertiary = Color(0xFFFFFFFF),
-    tertiaryContainer = Color(0xFFC8F1E9),
-    onTertiaryContainer = Color(0xFF00382F),
-    background = Color(0xFFF7F6FC),
-    onBackground = Color(0xFF16151F),
-    surface = Color(0xFFF7F6FC),
-    onSurface = Color(0xFF16151F),
-    surfaceVariant = Color(0xFFE6E4F0),
-    onSurfaceVariant = Color(0xFF4A4858),
-    surfaceTint = Color(0xFF4F3FD1),
-    inverseSurface = Color(0xFF2B2A35),
-    inverseOnSurface = Color(0xFFF3F1FA),
-    error = Color(0xFFBA1A1A),
+    tertiaryContainer = Color(0xFFE3E2DC),
+    onTertiaryContainer = Color(0xFF1A1A18),
+    background = Paper,
+    onBackground = Ink,
+    surface = Paper,
+    onSurface = Ink,
+    surfaceVariant = Color(0xFFE6E5E0),
+    onSurfaceVariant = Color(0xFF595955),
+    surfaceTint = Color(0xFF595955),
+    inverseSurface = Color(0xFF1C1C1A),
+    inverseOnSurface = Paper,
+    error = Color(0xFFB3261E),
     onError = Color(0xFFFFFFFF),
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
-    outline = Color(0xFF7A788A),
-    outlineVariant = Color(0xFFD9D6E6),
-    surfaceBright = Color(0xFFFFFFFF),
-    surfaceDim = Color(0xFFDDDBE6),
+    errorContainer = Color(0xFFF9DEDC),
+    onErrorContainer = Color(0xFF410E0B),
+    outline = Color(0xFF8A8984),
+    outlineVariant = Color(0xFFD6D5CF),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFFFAF9F6),
+    surfaceDim = Color(0xFFDCDBD6),
     surfaceContainerLowest = Color(0xFFFFFFFF),
-    surfaceContainerLow = Color(0xFFF2F0FA),
-    surfaceContainer = Color(0xFFEDEBF6),
-    surfaceContainerHigh = Color(0xFFE7E5F2),
-    surfaceContainerHighest = Color(0xFFE1DEEE),
+    surfaceContainerLow = Color(0xFFEFEEE9),
+    surfaceContainer = Color(0xFFEAE9E4),
+    surfaceContainerHigh = Color(0xFFE4E3DE),
+    surfaceContainerHighest = Color(0xFFDEDDD8),
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFC3BCFF),
-    onPrimary = Color(0xFF24168A),
-    primaryContainer = Color(0xFF3A2CB5),
-    onPrimaryContainer = Color(0xFFE4E0FF),
-    inversePrimary = Color(0xFF4F3FD1),
-    secondary = Color(0xFFC7C4DE),
-    onSecondary = Color(0xFF302F45),
-    secondaryContainer = Color(0xFF3A3852),
-    onSecondaryContainer = Color(0xFFE3E0F7),
-    tertiary = Color(0xFF5ED8C2),
-    onTertiary = Color(0xFF00382F),
-    tertiaryContainer = Color(0xFF005246),
-    onTertiaryContainer = Color(0xFFC8F1E9),
-    background = Color(0xFF0E0D15),
-    onBackground = Color(0xFFE7E5F0),
-    surface = Color(0xFF0E0D15),
-    onSurface = Color(0xFFE7E5F0),
-    surfaceVariant = Color(0xFF2A2838),
-    onSurfaceVariant = Color(0xFFC9C6D8),
-    surfaceTint = Color(0xFFC3BCFF),
-    inverseSurface = Color(0xFFE7E5F0),
-    inverseOnSurface = Color(0xFF2B2A35),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6),
-    outline = Color(0xFF928FA3),
-    outlineVariant = Color(0xFF34324A),
-    surfaceBright = Color(0xFF2E2D3B),
-    surfaceDim = Color(0xFF0E0D15),
-    surfaceContainerLowest = Color(0xFF0A0910),
-    surfaceContainerLow = Color(0xFF17161F),
-    surfaceContainer = Color(0xFF1B1A25),
-    surfaceContainerHigh = Color(0xFF242331),
-    surfaceContainerHighest = Color(0xFF2E2D3B),
+    primary = Signal,
+    onPrimary = Ink,
+    primaryContainer = Color(0xFF4A1408),
+    onPrimaryContainer = Color(0xFFFFD9CF),
+    inversePrimary = SignalDeep,
+    secondary = Color(0xFFC9C8C3),
+    onSecondary = Color(0xFF1A1A18),
+    secondaryContainer = Color(0xFF2E2E2B),
+    onSecondaryContainer = Color(0xFFEDECE8),
+    tertiary = Color(0xFFC9C8C3),
+    onTertiary = Color(0xFF1A1A18),
+    tertiaryContainer = Color(0xFF2E2E2B),
+    onTertiaryContainer = Color(0xFFEDECE8),
+    background = Ink,
+    onBackground = Color(0xFFEDECE8),
+    surface = Ink,
+    onSurface = Color(0xFFEDECE8),
+    surfaceVariant = Color(0xFF222220),
+    onSurfaceVariant = Color(0xFFA3A29D),
+    surfaceTint = Color(0xFFA3A29D),
+    inverseSurface = Color(0xFFEDECE8),
+    inverseOnSurface = Color(0xFF1A1A18),
+    error = Color(0xFFF2B8B5),
+    onError = Color(0xFF601410),
+    errorContainer = Color(0xFF8C1D18),
+    onErrorContainer = Color(0xFFF9DEDC),
+    outline = Color(0xFF6E6D69),
+    outlineVariant = Color(0xFF2A2A28),
+    scrim = Color(0xFF000000),
+    surfaceBright = Color(0xFF2A2A28),
+    surfaceDim = Ink,
+    surfaceContainerLowest = Color(0xFF070707),
+    surfaceContainerLow = Color(0xFF141413),
+    surfaceContainer = Color(0xFF181817),
+    surfaceContainerHigh = Color(0xFF1F1F1D),
+    surfaceContainerHighest = Color(0xFF262624),
 )
 
-/** Colours outside the Material scheme: semantic deltas, card fill and chart series. */
+/** Colours outside the Material scheme. */
 @Immutable
 data class PulseColors(
-    val up: Color,
-    val down: Color,
-    val live: Color,
+    /** Signal fill for bars, markers, flashes (not for small text on paper). */
+    val accent: Color,
+    /** Accent safe for text on the background (>= 4.5:1). */
+    val accentText: Color,
+    /** Text colour on top of an [accent] fill. */
+    val onAccent: Color,
+    val ink: Color,
+    val muted: Color,
+    val hairline: Color,
     val card: Color,
-    val series: List<Color>,
+    /** Three neutral steps for categorical splits (strong, mid, light). */
+    val neutrals: List<Color>,
 )
 
 private val LightPulse = PulseColors(
-    up = Color(0xFF0B7A67),
-    down = Color(0xFFC23B22),
-    live = Color(0xFF14A38B),
-    card = Color(0xFFFFFFFF),
-    series = listOf(Color(0xFF4F3FD1), Color(0xFF14A38B), Color(0xFFF07158), Color(0xFFE0A100), Color(0xFF8A7CF0)),
+    accent = Signal,
+    accentText = SignalDeep,
+    onAccent = Ink,
+    ink = Ink,
+    muted = Color(0xFF595955),
+    hairline = Color(0xFFD6D5CF),
+    card = Color(0xFFFBFAF7),
+    neutrals = listOf(Ink, Color(0xFF6F6E69), Color(0xFFA8A7A1)),
 )
 
 private val DarkPulse = PulseColors(
-    up = Color(0xFF5ED8C2),
-    down = Color(0xFFFF8F7A),
-    live = Color(0xFF5ED8C2),
-    card = Color(0xFF17161F),
-    series = listOf(Color(0xFFA99CFF), Color(0xFF4FD1B5), Color(0xFFFF8A73), Color(0xFFF2C14E), Color(0xFF7D70D9)),
+    accent = Signal,
+    accentText = Signal,
+    onAccent = Ink,
+    ink = Color(0xFFEDECE8),
+    muted = Color(0xFFA3A29D),
+    hairline = Color(0xFF2A2A28),
+    card = Color(0xFF141413),
+    neutrals = listOf(Color(0xFFEDECE8), Color(0xFF8C8B86), Color(0xFF4F4E4A)),
 )
 
 private val LocalPulseColors = staticCompositionLocalOf { LightPulse }
@@ -131,27 +152,53 @@ object PulseTheme {
         get() = LocalPulseColors.current
 }
 
-private val BaseType = Typography()
+private fun inter(weight: FontWeight, size: Int, line: Int, tracking: Double = 0.0) = TextStyle(
+    fontFamily = InterTight,
+    fontWeight = weight,
+    fontSize = size.sp,
+    lineHeight = line.sp,
+    letterSpacing = tracking.sp,
+)
 
-private val PulseTypography = BaseType.copy(
-    displayMedium = BaseType.displayMedium.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.5).sp),
-    displaySmall = BaseType.displaySmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.25).sp),
-    headlineSmall = BaseType.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
-    titleLarge = BaseType.titleLarge.copy(fontWeight = FontWeight.SemiBold),
-    titleMedium = BaseType.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-    labelLarge = BaseType.labelLarge.copy(fontWeight = FontWeight.Medium),
+// Few weights (400/500/600), tight tracking on large sizes, wide tracking on the small caps labels.
+private val PulseTypography = Typography(
+    displayLarge = inter(FontWeight.Medium, 57, 60, -1.5),
+    displayMedium = inter(FontWeight.Medium, 45, 48, -1.0),
+    displaySmall = inter(FontWeight.Medium, 36, 40, -0.75),
+    headlineLarge = inter(FontWeight.SemiBold, 32, 36, -0.75),
+    headlineMedium = inter(FontWeight.SemiBold, 28, 32, -0.5),
+    headlineSmall = inter(FontWeight.SemiBold, 24, 28, -0.4),
+    titleLarge = inter(FontWeight.SemiBold, 20, 24, -0.2),
+    titleMedium = inter(FontWeight.Medium, 16, 22),
+    titleSmall = inter(FontWeight.Medium, 14, 20),
+    bodyLarge = inter(FontWeight.Normal, 16, 24),
+    bodyMedium = inter(FontWeight.Normal, 14, 20),
+    bodySmall = inter(FontWeight.Normal, 12, 16, 0.1),
+    labelLarge = inter(FontWeight.Medium, 14, 20, 0.1),
+    labelMedium = inter(FontWeight.Medium, 12, 16, 0.4),
+    labelSmall = inter(FontWeight.Medium, 11, 14, 1.2),
+)
+
+/** Huge monospaced hero number. */
+val HeroNumberStyle = TextStyle(
+    fontFamily = JetBrainsMono,
+    fontWeight = FontWeight.Medium,
+    fontSize = 84.sp,
+    lineHeight = 88.sp,
+    letterSpacing = (-3).sp,
+    fontFeatureSettings = "tnum",
 )
 
 private val PulseShapes = Shapes(
-    extraSmall = RoundedCornerShape(8.dp),
-    small = RoundedCornerShape(12.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(24.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraSmall = RoundedCornerShape(2.dp),
+    small = RoundedCornerShape(2.dp),
+    medium = RoundedCornerShape(4.dp),
+    large = RoundedCornerShape(4.dp),
+    extraLarge = RoundedCornerShape(8.dp),
 )
 
-/** Monospaced digits so live numbers do not jitter as they change. */
-fun TextStyle.tabular(): TextStyle = copy(fontFeatureSettings = "tnum")
+/** All numbers render in JetBrains Mono with tabular figures so live values do not jitter. */
+fun TextStyle.tabular(): TextStyle = copy(fontFamily = JetBrainsMono, fontFeatureSettings = "tnum")
 
 @Composable
 fun PulseboardTheme(darkTheme: Boolean, content: @Composable () -> Unit) {

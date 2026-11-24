@@ -52,6 +52,8 @@ data class OverviewData(
 
 data class RealtimeSnapshot(
     val activeUsers: Int,
+    /** Typical active users implied by the whole 30-minute window (used as the rolling baseline). */
+    val baselineActive: Int,
     /** Users per minute, oldest first; the last entry is the current minute. */
     val perMinute: List<Int>,
     val devices: List<LabeledValue>,
@@ -59,6 +61,9 @@ data class RealtimeSnapshot(
     val topCountries: List<LabeledValue>,
     val topEvents: List<LabeledValue>,
 )
+
+/** One incoming event for the live feed. */
+data class LiveEvent(val id: Long, val timeMillis: Long, val name: String, val detail: String)
 
 enum class ReportType(val title: String, val subtitle: String, val dimensionLabel: String) {
     ACQUISITION("Acquisition", "Which channels bring users in", "Channel"),

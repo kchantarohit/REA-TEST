@@ -235,7 +235,7 @@ private fun KpiCard(kpi: KpiSummary, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .width(172.dp)
             .semantics { this.selected = selected },
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(4.dp),
         selected = selected,
         onClick = onClick,
     ) {
@@ -351,8 +351,8 @@ private fun LegendValue(label: String, value: String, color: Color, dashed: Bool
 private fun OverviewSkeleton() {
     Column(Modifier.padding(horizontal = Gutter), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            repeat(2) { SkeletonBlock(Modifier.width(172.dp).height(150.dp), RoundedCornerShape(20.dp)) }
+            repeat(2) { SkeletonBlock(Modifier.width(172.dp).height(150.dp), RoundedCornerShape(4.dp)) }
         }
-        SkeletonBlock(Modifier.fillMaxWidth().height(320.dp), RoundedCornerShape(24.dp))
+        SkeletonBlock(Modifier.fillMaxWidth().height(320.dp), RoundedCornerShape(4.dp))
     }
 }

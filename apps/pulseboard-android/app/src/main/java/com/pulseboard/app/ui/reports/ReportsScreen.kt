@@ -61,14 +61,14 @@ fun ReportsScreen(onOpen: (ReportType) -> Unit) {
             items(ReportType.entries, key = { it.name }) { type ->
                 PulseCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = RoundedCornerShape(4.dp),
                     onClick = { onOpen(type) },
                 ) {
                     Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             Modifier
                                 .size(44.dp)
-                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp)),
+                                .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(2.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
                             Icon(

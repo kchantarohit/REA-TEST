@@ -99,8 +99,8 @@ fun ReportDetailScreen(viewModel: ReportDetailViewModel, onBack: () -> Unit) {
                     if (state.error == null) {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                SkeletonBlock(Modifier.fillMaxWidth().height(280.dp), RoundedCornerShape(24.dp))
-                                SkeletonBlock(Modifier.fillMaxWidth().height(360.dp), RoundedCornerShape(24.dp))
+                                SkeletonBlock(Modifier.fillMaxWidth().height(280.dp), RoundedCornerShape(4.dp))
+                                SkeletonBlock(Modifier.fillMaxWidth().height(360.dp), RoundedCornerShape(4.dp))
                             }
                         }
                     }

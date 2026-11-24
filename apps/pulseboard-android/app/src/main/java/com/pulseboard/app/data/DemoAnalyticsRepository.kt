@@ -22,7 +22,9 @@ import kotlin.random.Random
 class DemoAnalyticsRepository(
     private val latencyMs: Long = 450,
     private val tickMs: Long = 3_000,
+    private val eventGapMs: LongRange = 300L..1_500L,
     private val today: () -> LocalDate = { LocalDate.now() },
+    private val now: () -> Long = { System.currentTimeMillis() },
 ) : AnalyticsRepository {
 
     private val demoProperties = listOf(
@@ -35,21 +37,52 @@ class DemoAnalyticsRepository(
 
     override fun properties(): List<Property> = demoProperties
 
+    // shortcut: one demo "minute" advances per tick (default 3 s) so launches and spikes show up quickly.
     override fun realtime(propertyId: String): Flow<RealtimeSnapshot> = flow {
         val rnd = Random(seed(propertyId, "realtime"))
         val base = 44.0 * scaleOf(propertyId)
         var level = base
+        var surgeTicks = 0
+        var surgeFactor = 1.0
         val minutes = MutableList(MINUTES) {
-            level = nextLevel(rnd, level, base)
+            level = nextLevel(rnd, level, base, base)
             level.roundToInt()
         }
         delay(latencyMs)
         while (true) {
             emit(realtimeSnapshot(rnd, minutes.toList()))
             delay(tickMs)
-            level = nextLevel(rnd, level, base)
+            // Occasional sustained surge (e.g. a launch mention) pulls the level up for a few minutes.
+            if (surgeTicks == 0 && rnd.nextDouble() < SURGE_CHANCE) {
+                surgeTicks = rnd.nextInt(4, 9)
+                surgeFactor = rnd.nextDouble(1.7, 2.2)
+            }
+            val target = if (surgeTicks > 0) base * surgeFactor else base
+            if (surgeTicks > 0) surgeTicks--
+            level = nextLevel(rnd, level, target, base)
+            // Occasional one-minute spike or drop for the anomaly markers.
+            val r = rnd.nextDouble()
+            val shock = when {
+                r < SPIKE_CHANCE -> rnd.nextDouble(2.0, 2.6)
+                r < SPIKE_CHANCE + DROP_CHANCE -> rnd.nextDouble(0.3, 0.45)
+                else -> 1.0
+            }
             minutes.removeAt(0)
-            minutes.add(level.roundToInt())
+            minutes.add((level * shock).roundToInt().coerceAtLeast(0))
+        }
+    }.flowOn(Dispatchers.Default)
+
+    override fun events(propertyId: String): Flow<LiveEvent> = flow {
+        val rnd = Random(seed(propertyId, "events"))
+        var id = 0L
+        delay(latencyMs)
+        while (true) {
+            val r = rnd.nextDouble()
+            var acc = 0.0
+            val name = EVENT_WEIGHTS.firstOrNull { (_, w) -> acc += w; r < acc }?.first ?: EVENT_WEIGHTS.last().first
+            val detail = if (name in PAGE_EVENTS) PAGES[rnd.nextInt(PAGES.size)] else COUNTRIES[rnd.nextInt(COUNTRIES.size)]
+            emit(LiveEvent(id++, now(), name, detail))
+            delay(rnd.nextLong(eventGapMs.first, eventGapMs.last + 1))
         }
     }.flowOn(Dispatchers.Default)
 
@@ -161,7 +194,9 @@ class DemoAnalyticsRepository(
     // ---- generation helpers -------------------------------------------------
 
     private fun realtimeSnapshot(rnd: Random, minutes: List<Int>): RealtimeSnapshot {
-        val active = (minutes.sum() * 0.31).roundToInt().coerceAtLeast(1)
+        // Recent minutes dominate the 30-minute active count, so surges show up within a few ticks.
+        val active = (minutes.takeLast(RECENT).sum() * ACTIVE_FACTOR).roundToInt().coerceAtLeast(1)
+        val baseline = (minutes.average() * RECENT * ACTIVE_FACTOR).roundToInt().coerceAtLeast(1)
         fun split(labels: List<String>, weights: List<Double>, multiplier: Double = 1.0): List<LabeledValue> {
             val jittered = weights.map { it * rnd.nextDouble(0.9, 1.1) }
             val total = jittered.sum()
@@ -171,6 +206,7 @@ class DemoAnalyticsRepository(
         }
         return RealtimeSnapshot(
             activeUsers = active,
+            baselineActive = baseline,
             perMinute = minutes,
             devices = split(listOf("Mobile", "Desktop", "Tablet"), listOf(0.6, 0.34, 0.06)),
             topPages = split(PAGES, listOf(0.3, 0.2, 0.16, 0.13, 0.11, 0.1)).take(5),
@@ -179,8 +215,8 @@ class DemoAnalyticsRepository(
         )
     }
 
-    private fun nextLevel(rnd: Random, level: Double, base: Double): Double =
-        (level + (base - level) * 0.18 + rnd.nextDouble(-0.14, 0.14) * base).coerceAtLeast(base * 0.3)
+    private fun nextLevel(rnd: Random, level: Double, target: Double, base: Double): Double =
+        (level + (target - level) * 0.3 + rnd.nextDouble(-0.12, 0.12) * base).coerceAtLeast(base * 0.3)
 
     private fun dailySeries(rnd: Random, metric: Metric, days: Int, scale: Double, growth: Double): List<Float> {
         val base = baseDaily(metric) * if (metric.format == ValueFormat.DURATION) 1.0 else scale
@@ -264,6 +300,20 @@ class DemoAnalyticsRepository(
 
     private companion object {
         const val MINUTES = 30
+        const val RECENT = 10
+        const val ACTIVE_FACTOR = 0.95
+        const val SURGE_CHANCE = 0.05
+        const val SPIKE_CHANCE = 0.04
+        const val DROP_CHANCE = 0.03
+        val EVENT_WEIGHTS = listOf(
+            "page_view" to 0.45,
+            "scroll" to 0.18,
+            "add_to_cart" to 0.1,
+            "sign_up" to 0.1,
+            "share" to 0.08,
+            "purchase" to 0.09,
+        )
+        val PAGE_EVENTS = setOf("page_view", "scroll", "share")
         val PAGES = listOf("/", "/collections/new", "/journal/field-guide", "/pricing", "/checkout", "/account")
         val COUNTRIES = listOf("United States", "India", "Germany", "Brazil", "United Kingdom", "Japan")
         val EVENTS = listOf("page_view", "scroll", "click", "session_start", "sign_up", "purchase")

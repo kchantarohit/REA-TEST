@@ -15,6 +15,9 @@ interface AnalyticsRepository {
     /** Emits a fresh snapshot every few seconds until the collector is cancelled. */
     fun realtime(propertyId: String): Flow<RealtimeSnapshot>
 
+    /** Emits individual incoming events as they happen, until cancelled. */
+    fun events(propertyId: String): Flow<LiveEvent>
+
     suspend fun overview(propertyId: String, range: DateRange, filters: Filters): OverviewData
 
     suspend fun report(propertyId: String, type: ReportType, range: DateRange): ReportDetail

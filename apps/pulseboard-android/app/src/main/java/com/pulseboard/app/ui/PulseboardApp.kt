@@ -40,8 +40,8 @@ import com.pulseboard.app.ui.reports.ReportsScreen
 import com.pulseboard.app.ui.settings.SettingsScreen
 
 private enum class TopDestination(val route: String, val label: String, val icon: ImageVector) {
-    OVERVIEW("overview", "Overview", Icons.Rounded.Dashboard),
     REALTIME("realtime", "Realtime", Icons.Rounded.Speed),
+    OVERVIEW("overview", "Overview", Icons.Rounded.Dashboard),
     REPORTS("reports", "Reports", Icons.Rounded.Assessment),
     SETTINGS("settings", "Settings", Icons.Rounded.Settings),
 }
@@ -79,7 +79,7 @@ fun PulseboardApp(container: AppContainer) {
     ) { innerPadding ->
         NavHost(
             navController = navController,
-            startDestination = TopDestination.OVERVIEW.route,
+            startDestination = TopDestination.REALTIME.route,
             modifier = Modifier.padding(innerPadding),
             enterTransition = { fadeIn(tween(220)) },
             exitTransition = { fadeOut(tween(160)) },

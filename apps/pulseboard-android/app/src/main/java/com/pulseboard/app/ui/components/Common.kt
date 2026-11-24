@@ -10,6 +10,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -27,11 +28,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.ArrowDownward
-import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,7 +77,7 @@ val Gutter: Dp = 16.dp
 @Composable
 fun PulseCard(
     modifier: Modifier = Modifier,
-    shape: Shape = RoundedCornerShape(24.dp),
+    shape: Shape = RoundedCornerShape(4.dp),
     selected: Boolean = false,
     onClick: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
@@ -105,57 +104,57 @@ fun PulseCard(
     }
 }
 
+/**
+ * Change vs the previous period as a glyph + mono percentage. Neutral ink by default; the
+ * notable direction (down unless [accentWhenUp]) uses the accent so it stands out.
+ */
 @Composable
-fun DeltaBadge(deltaPercent: Double, modifier: Modifier = Modifier) {
+fun DeltaBadge(deltaPercent: Double, modifier: Modifier = Modifier, accentWhenUp: Boolean = false, suffix: String = "") {
     val flat = abs(deltaPercent) < 0.05
-    val colors = PulseTheme.colors
-    val color = when {
-        flat -> MaterialTheme.colorScheme.onSurfaceVariant
-        deltaPercent > 0 -> colors.up
-        else -> colors.down
-    }
-    val icon = when {
-        flat -> Icons.Rounded.Remove
-        deltaPercent > 0 -> Icons.Rounded.ArrowUpward
-        else -> Icons.Rounded.ArrowDownward
+    val up = deltaPercent > 0
+    val notable = !flat && up == accentWhenUp
+    val color = if (notable) PulseTheme.colors.accentText else MaterialTheme.colorScheme.onSurface
+    val glyph = when {
+        flat -> "\u2013"
+        up -> "\u25B2"
+        else -> "\u25BC"
     }
     val description = when {
         flat -> "No change"
-        deltaPercent > 0 -> "Up ${formatDelta(deltaPercent)}"
+        up -> "Up ${formatDelta(deltaPercent)}"
         else -> "Down ${formatDelta(deltaPercent)}"
-    } + " versus previous period"
-    Row(
-        modifier = modifier
-            .clip(CircleShape)
-            .background(color.copy(alpha = 0.12f))
-            .padding(horizontal = 8.dp, vertical = 3.dp)
-            .clearAndSetSemantics { contentDescription = description },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(14.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(formatDelta(deltaPercent), style = MaterialTheme.typography.labelMedium.tabular(), color = color)
-    }
+    } + (if (suffix.isBlank()) " versus previous period" else " $suffix")
+    Text(
+        "$glyph ${formatDelta(deltaPercent)}" + (if (suffix.isBlank()) "" else " $suffix"),
+        modifier = modifier.clearAndSetSemantics { contentDescription = description },
+        style = MaterialTheme.typography.labelMedium.tabular(),
+        color = color,
+    )
+}
+
+/** Small uppercase, tracked section label. */
+@Composable
+fun Eyebrow(text: String, modifier: Modifier = Modifier, color: Color = MaterialTheme.colorScheme.onSurfaceVariant) {
+    Text(text.uppercase(), modifier = modifier, style = MaterialTheme.typography.labelSmall, color = color, maxLines = 1)
+}
+
+/** 1px rule used to separate sections instead of boxes. */
+@Composable
+fun Hairline(modifier: Modifier = Modifier, color: Color = PulseTheme.colors.hairline) {
+    HorizontalDivider(modifier = modifier, thickness = Dp.Hairline, color = color)
 }
 
 @Composable
 fun DemoDataChip(modifier: Modifier = Modifier) {
-    Row(
+    Text(
+        "DEMO DATA",
         modifier = modifier
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.secondaryContainer)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .border(Dp.Hairline, MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp))
+            .padding(horizontal = 6.dp, vertical = 3.dp)
             .clearAndSetSemantics { contentDescription = "Showing demo data" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(6.dp).background(PulseTheme.colors.live, CircleShape))
-        Spacer(Modifier.width(6.dp))
-        Text(
-            "Demo data",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
-        )
-    }
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -207,7 +206,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 fun ErrorCard(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    PulseCard(modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+    PulseCard(modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Rounded.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error)
             Spacer(Modifier.width(12.dp))
@@ -236,7 +235,7 @@ fun SkeletonBlock(modifier: Modifier = Modifier, shape: Shape = RoundedCornerSha
 }
 
 @Composable
-fun LivePulseDot(modifier: Modifier = Modifier, color: Color = PulseTheme.colors.live) {
+fun LivePulseDot(modifier: Modifier = Modifier, color: Color = PulseTheme.colors.accent) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val scale by transition.animateFloat(
         initialValue = 1f,

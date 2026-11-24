@@ -2,6 +2,8 @@ package com.pulseboard.app.data
 
 import com.pulseboard.app.ui.reports.sortRows
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -9,7 +11,7 @@ import org.junit.Test
 import java.time.LocalDate
 
 class DemoAnalyticsRepositoryTest {
-    private val repo = DemoAnalyticsRepository(latencyMs = 0, tickMs = 0, today = { LocalDate.of(2026, 3, 1) })
+    private val repo = DemoAnalyticsRepository(latencyMs = 0, tickMs = 0, eventGapMs = 0L..0L, today = { LocalDate.of(2026, 3, 1) })
     private val property = repo.properties().first().id
 
     @Test
@@ -54,5 +56,27 @@ class DemoAnalyticsRepositoryTest {
         val rows = listOf(ReportRow("b", listOf(2.0)), ReportRow("a", listOf(3.0)), ReportRow("c", listOf(1.0)))
         assertEquals(listOf("a", "b", "c"), sortRows(rows, 1, ascending = false).map { it.dimension })
         assertEquals(listOf("a", "b", "c"), sortRows(rows, 0, ascending = true).map { it.dimension })
+    }
+
+    @Test
+    fun realtimeDemoProducesSpikesOrDrops() = runTest {
+        // Over many demo minutes the injected spikes/drops must be detectable by the markers.
+        val last = repo.realtime(property).take(200).toList()
+        val flagged = last.sumOf { snap -> detectAnomalies(snap.perMinute).count { it.index == snap.perMinute.lastIndex } }
+        assertTrue("expected some anomalies, got $flagged", flagged > 0)
+    }
+
+    @Test
+    fun eventsHaveIncreasingIds() = runTest {
+        val events = repo.events(property).take(5).toList()
+        assertEquals(listOf(0L, 1L, 2L, 3L, 4L), events.map { it.id })
+    }
+
+    @Test
+    fun anomalyDetectorFlagsSpikeAndDrop() {
+        val flat = List(10) { 100 + (it % 3) }
+        val anomalies = detectAnomalies(flat + 300 + flat + 10)
+        assertEquals(listOf(AnomalyKind.SPIKE, AnomalyKind.DROP), anomalies.map { it.kind })
+        assertTrue(detectAnomalies(List(30) { 100 + (it % 3) }).isEmpty())
     }
 }
