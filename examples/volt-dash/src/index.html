@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0620">
+<title>Volt Dash</title>
+<style>
+:root {
+  --bg: #0b0620;
+  --ink: #f4f1ff;
+  --muted: #c9c0f2;
+  --cyan: #45f3ff;
+  --pink: #ff4fd8;
+  --cell: #ffe066;
+  --pad-t: max(env(safe-area-inset-top), 14px);
+  --pad-r: max(env(safe-area-inset-right), 14px);
+  --pad-b: max(env(safe-area-inset-bottom), 18px);
+  --pad-l: max(env(safe-area-inset-left), 14px);
+}
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  touch-action: none; overscroll-behavior: none; -webkit-touch-callout: none;
+}
+[hidden] { display: none !important; }
+#game { position: fixed; inset: 0; }
+#game canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+button:focus { outline: none; }
+button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.btn {
+  appearance: none; border: 0; border-radius: 999px; min-height: 60px; min-width: 220px; padding: 0 34px;
+  font-size: 22px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #13082b;
+  background: linear-gradient(90deg, var(--cyan), var(--pink)); box-shadow: 0 0 26px rgba(255, 79, 216, .45);
+}
+.btn:active { transform: scale(.97); }
+.btn.ghost {
+  min-height: 54px; font-size: 17px; color: var(--ink); background: rgba(255, 255, 255, .08);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .25);
+}
+.icon-btn {
+  position: absolute; top: var(--pad-t); right: var(--pad-r); width: 52px; height: 52px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--ink);
+  background: rgba(20, 12, 48, .62); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .22);
+}
+.icon-btn svg { width: 26px; height: 26px; }
+.icon-btn .slash, .icon-btn.off .waves { display: none; }
+.icon-btn.off .slash { display: inline; }
+
+.screen {
+  position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; text-align: center;
+  padding: var(--pad-t) var(--pad-r) var(--pad-b) var(--pad-l);
+}
+
+/* Title */
+#title {
+  justify-content: space-between;
+  background: linear-gradient(180deg, rgba(11, 6, 32, .9) 0%, rgba(11, 6, 32, 0) 32%, rgba(11, 6, 32, 0) 52%, rgba(11, 6, 32, .92) 82%);
+}
+.logo {
+  margin: 7vh 0 0; font-size: clamp(56px, 19vw, 96px); line-height: .84; font-weight: 900; font-style: italic;
+  letter-spacing: -.02em; color: transparent; background: linear-gradient(180deg, #b6fbff, var(--cyan) 42%, var(--pink));
+  -webkit-background-clip: text; background-clip: text; filter: drop-shadow(0 0 16px rgba(69, 243, 255, .45));
+}
+.tag { margin: 14px 0 0; color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .32em; text-transform: uppercase; }
+.title-foot { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; }
+.stats { margin: 0; color: var(--muted); font-size: 15px; }
+.stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.stats .sep { display: inline-block; width: 5px; height: 5px; margin: 0 10px 3px; border-radius: 50%; background: var(--pink); }
+.howto { display: flex; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.howto li {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 78px; padding: 8px 10px;
+  border-radius: 14px; background: rgba(255, 255, 255, .07); font-size: 12px; font-weight: 700; color: var(--muted);
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.howto .key { font-size: 20px; color: var(--cyan); letter-spacing: .1em; }
+.hint { margin: 0; color: var(--muted); font-size: 13px; opacity: .85; }
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; padding: var(--pad-t) var(--pad-r) 0 var(--pad-l); }
+#hud .icon-btn { pointer-events: auto; }
+.hud-score {
+  font-size: 36px; font-weight: 900; line-height: 1; font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .45), 0 0 14px rgba(69, 243, 255, .55);
+}
+.hud-cells {
+  display: flex; align-items: center; gap: 9px; margin-top: 8px; font-size: 21px; font-weight: 800; color: var(--cell);
+  font-variant-numeric: tabular-nums; text-shadow: 0 2px 0 rgba(0, 0, 0, .45);
+}
+.gem { width: 14px; height: 14px; border-radius: 2px; background: var(--cell); transform: rotate(45deg); box-shadow: 0 0 10px var(--cell); }
+.powers { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.pw { display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; text-shadow: 0 1px 0 rgba(0, 0, 0, .6); }
+.pw span { min-width: 64px; }
+.pw i { display: block; width: 104px; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(255, 255, 255, .16); }
+.pw b { display: block; width: 100%; height: 100%; background: currentColor; transform-origin: left; box-shadow: 0 0 8px currentColor; }
+.pause-glyph { display: block; width: 16px; height: 18px; border-left: 5px solid var(--ink); border-right: 5px solid var(--ink); }
+
+/* Overlays */
+.overlay { justify-content: center; gap: 14px; background: rgba(8, 4, 24, .74); }
+.overlay h2 { margin: 0 0 6px; font-size: 40px; font-weight: 900; font-style: italic; letter-spacing: .02em; }
+.cause { margin: -6px 0 6px; max-width: 320px; color: var(--muted); font-size: 15px; line-height: 1.4; }
+.final { display: flex; flex-direction: column; align-items: center; }
+.final .label { color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; }
+.final b { font-size: 64px; line-height: 1.05; font-weight: 900; font-variant-numeric: tabular-nums; text-shadow: 0 0 18px rgba(69, 243, 255, .5); }
+.badge { margin: 0; padding: 6px 14px; border-radius: 999px; background: var(--pink); color: #13082b; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; font-size: 13px; }
+.rows { display: flex; gap: 12px; margin-bottom: 10px; }
+.rows div { min-width: 120px; padding: 10px 14px; border-radius: 14px; background: rgba(255, 255, 255, .07); }
+.rows span { display: block; color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .2em; text-transform: uppercase; }
+.rows b { font-size: 26px; font-variant-numeric: tabular-nums; }
+#fatal p { max-width: 320px; color: var(--muted); line-height: 1.5; }
+</style>
+</head>
+<body>
+<div id="game"></div>
+
+<div id="hud" hidden>
+  <div id="score" class="hud-score">0</div>
+  <div class="hud-cells"><span class="gem"></span><span id="cells">0</span></div>
+  <div id="powers" class="powers"></div>
+  <button id="btn-pause" class="icon-btn" aria-label="Pause"><span class="pause-glyph"></span></button>
+</div>
+
+<section id="title" class="screen">
+  <button class="icon-btn" data-mute aria-label="Sound">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>
+      <path class="waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/>
+      <path class="slash" d="M16 9l5 6M21 9l-5 6"/>
+    </svg>
+  </button>
+  <header>
+    <h1 class="logo">VOLT<br>DASH</h1>
+    <p class="tag">Neon courier run</p>
+  </header>
+  <div class="title-foot">
+    <button id="btn-play" class="btn">Play</button>
+    <p class="stats">Best <b id="title-best">0</b><span class="sep"></span>Cells <b id="title-cells">0</b></p>
+    <ul class="howto">
+      <li><span class="key">&larr;&rarr;</span>Lanes</li>
+      <li><span class="key">&uarr;</span>Jump</li>
+      <li><span class="key">&darr;</span>Roll</li>
+    </ul>
+    <p class="hint">Swipe to move &middot; tap anywhere to start</p>
+  </div>
+</section>
+
+<section id="pause" class="screen overlay" hidden>
+  <h2>Paused</h2>
+  <button id="btn-resume" class="btn">Resume</button>
+  <button class="btn ghost" data-mute aria-label="Sound"><span class="label">Sound: on</span></button>
+  <button class="btn ghost" data-home>Home</button>
+</section>
+
+<section id="over" class="screen overlay" hidden>
+  <h2>Run over</h2>
+  <p id="over-cause" class="cause"></p>
+  <div class="final"><span class="label">Score</span><b id="over-score">0</b></div>
+  <p id="over-badge" class="badge" hidden>New best</p>
+  <div class="rows">
+    <div><span>Cells</span><b id="over-cells">0</b></div>
+    <div><span>Best</span><b id="over-best">0</b></div>
+  </div>
+  <button id="btn-again" class="btn">Play again</button>
+  <button class="btn ghost" data-home>Home</button>
+</section>
+
+<section id="fatal" class="screen overlay" hidden>
+  <h2>Can't start</h2>
+  <p id="fatal-msg"></p>
+</section>
+
+<!--BUNDLE-->
+</body>
+</html>
