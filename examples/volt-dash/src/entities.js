@@ -1,8 +1,11 @@
 // Spawns rows from the pattern generator and owns the pooled meshes for obstacles,
-// volt cells (one InstancedMesh) and power-up tokens. Positions live in track space
+// volt cells (one InstancedMesh), gems and power-up tokens. Positions live in track space
 // (s = distance along the road); render z = -(s - d), with the hero fixed at z = 0.
 import {
+  AdditiveBlending,
   BoxGeometry,
+  ConeGeometry,
+  DodecahedronGeometry,
   CylinderGeometry,
   DynamicDrawUsage,
   ExtrudeGeometry,
@@ -14,6 +17,7 @@ import {
   MeshBasicMaterial,
   MeshLambertMaterial,
   OctahedronGeometry,
+  PlaneGeometry,
   Shape,
   SphereGeometry,
   TorusGeometry,
@@ -21,27 +25,39 @@ import {
 import {
   BARRIER_D,
   BARRIER_H,
+  GAP_LEN,
   GATE_BOTTOM,
   GATE_D,
+  LANE_W,
+  LASER_D,
   POD_H,
   POD_LEN,
   RAMP_LEN,
+  ROLLER_LEN,
+  SLIDER_H,
+  SLIDER_LEN,
   START_S,
+  TELEGRAPH,
   createGenerator,
   laneX,
+  laserOn,
   podFront,
+  rollerS,
+  sliderProgress,
+  sliderX,
 } from './track.js';
-import { panelTexture, stripeTexture } from './textures.js';
+import { gapTexture, panelTexture, stripeTexture } from './textures.js';
 
 const SPAWN_AHEAD = 165;
 const KEEP_BEHIND = 12;
 const MAX_CELLS = 320;
-export const POWER_COLORS = { magnet: '#ff3d6e', spring: '#4dff88', shield: '#4dc3ff', x2: '#ffb02e' };
+export const POWER_COLORS = { magnet: '#ff3d6e', spring: '#4dff88', shield: '#4dc3ff', x2: '#ffb02e', hyper: '#b36bff' };
 
 /**
  * @typedef {import('./track.js').Obstacle & {mesh: Group}} LiveObstacle
  * @typedef {{s: number, x: number, y: number, pulled: boolean, px: number, py: number, pz: number}} LiveCell
  * @typedef {import('./track.js').PowerSpec & {mesh: Group}} LivePower
+ * @typedef {import('./track.js').CellSpec & {mesh: Group}} LiveGem
  */
 
 function rampGeometry() {
@@ -69,6 +85,17 @@ export function createEntities(scene) {
   const lampMat = new MeshBasicMaterial({ color: '#fff3c4' });
   const rampMat = new MeshLambertMaterial({ color: '#34305a' });
   const chevMat = new MeshBasicMaterial({ color: '#45f3ff' });
+  const rockMat = new MeshLambertMaterial({ color: '#b5643a', flatShading: true });
+  const magmaMat = new MeshBasicMaterial({ color: '#ffb347' });
+  const sledTex = stripeTexture('#45f3ff', '#20344f');
+  const sledMat = new MeshLambertMaterial({ color: '#d7ecff', map: panelTexture() });
+  const sledBand = new MeshLambertMaterial({ map: sledTex, emissive: '#ffffff', emissiveMap: sledTex, emissiveIntensity: 0.5 });
+  const warnMat = new MeshBasicMaterial({ color: '#ffe14d', transparent: true, depthWrite: false });
+  const beamMat = new MeshBasicMaterial({ color: '#ff2a4a', transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false });
+  const idleBeamMat = new MeshBasicMaterial({ color: '#3dff8a', transparent: true, opacity: 0.22, blending: AdditiveBlending, depthWrite: false });
+  const laserPostMat = new MeshLambertMaterial({ color: '#6a6488', emissive: '#1a1630' });
+  const gapMat = new MeshBasicMaterial({ map: gapTexture(), color: '#ffffff' });
+  const gapEdge = new MeshBasicMaterial({ color: '#ff9f2e' });
 
   // Every obstacle mesh has its front face at local z = 0 and extends towards -z.
   const geo = {
@@ -84,6 +111,21 @@ export function createEntities(scene) {
     ramp: rampGeometry(),
     chevron: new BoxGeometry(1.6, 0.04, 0.22),
     ring: new TorusGeometry(0.5, 0.06, 8, 28),
+    rock: new DodecahedronGeometry(ROLLER_LEN / 2, 0),
+    rockBand: new TorusGeometry(ROLLER_LEN / 2 + 0.02, 0.09, 6, 24),
+    sled: new BoxGeometry(1.9, SLIDER_H - 0.35, SLIDER_LEN).translate(0, 0.35 + (SLIDER_H - 0.35) / 2, -SLIDER_LEN / 2),
+    sledBand: new BoxGeometry(1.94, 0.3, SLIDER_LEN + 0.04).translate(0, 1.2, -SLIDER_LEN / 2),
+    sledSkid: new BoxGeometry(1.5, 0.12, SLIDER_LEN - 0.6).translate(0, 0.2, -SLIDER_LEN / 2),
+    arrowHead: new ConeGeometry(0.55, 0.8, 3).rotateZ(-Math.PI / 2),
+    arrowTail: new BoxGeometry(0.8, 0.28, 0.12),
+    floorArrow: new ConeGeometry(0.75, 1.2, 3).rotateX(-Math.PI / 2).scale(1, 0.05, 1),
+    laserPost: new BoxGeometry(0.26, 3.2, 0.26).translate(0, 1.6, -LASER_D / 2),
+    laserHead: new BoxGeometry(0.44, 0.44, 0.44).translate(0, 3.3, -LASER_D / 2),
+    laserFloor: new BoxGeometry(LANE_W - 0.3, 0.04, 0.5).translate(0, 0.02, -LASER_D / 2),
+    beam: new BoxGeometry(LANE_W - 0.3, 0.11, 0.11),
+    gap: new PlaneGeometry(LANE_W + 0.1, GAP_LEN).rotateX(-Math.PI / 2).translate(0, 0.02, -GAP_LEN / 2),
+    gapEdge: new BoxGeometry(LANE_W + 0.1, 0.08, 0.26),
+    gem: new OctahedronGeometry(0.34, 0).scale(1, 1.25, 1),
   };
 
   function build(kind) {
@@ -104,6 +146,56 @@ export function createEntities(scene) {
       add(geo.gatePanel, gateMat);
       add(geo.gateEdge, gateGlow);
       add(geo.gateCap, metal);
+    } else if (kind === 'roller') {
+      const spinner = new Group();
+      spinner.position.y = ROLLER_LEN / 2;
+      spinner.position.z = -ROLLER_LEN / 2;
+      spinner.add(new Mesh(geo.rock, rockMat));
+      const band = new Mesh(geo.rockBand, magmaMat);
+      band.rotation.y = Math.PI / 2;
+      spinner.add(band);
+      const band2 = new Mesh(geo.rockBand, magmaMat);
+      band2.rotation.x = Math.PI / 2;
+      band2.scale.setScalar(0.98);
+      spinner.add(band2);
+      g.add(spinner);
+      g.userData.spinner = spinner;
+    } else if (kind === 'slider') {
+      const body = new Group();
+      body.add(new Mesh(geo.sled, sledMat), new Mesh(geo.sledBand, sledBand), new Mesh(geo.sledSkid, chevMat));
+      const arrow = new Group();
+      const head = new Mesh(geo.arrowHead, warnMat);
+      head.position.x = 0.5;
+      const tail = new Mesh(geo.arrowTail, warnMat);
+      tail.position.x = -0.2;
+      arrow.add(head, tail);
+      arrow.position.set(0, SLIDER_H + 0.75, -SLIDER_LEN / 2);
+      body.add(arrow);
+      g.add(body);
+      const marker = new Mesh(geo.floorArrow, warnMat); // ghost arrow on the target lane
+      marker.position.y = 0.03;
+      g.add(marker);
+      Object.assign(g.userData, { body, arrow, marker });
+    } else if (kind === 'laser') {
+      add(geo.laserPost, laserPostMat, -LANE_W / 2 + 0.15);
+      add(geo.laserPost, laserPostMat, LANE_W / 2 - 0.15);
+      const headMat = new MeshBasicMaterial({ color: '#ff2a4a' });
+      add(geo.laserHead, headMat, -LANE_W / 2 + 0.15);
+      add(geo.laserHead, headMat, LANE_W / 2 - 0.15);
+      add(geo.laserFloor, headMat);
+      const beams = [];
+      for (let i = 0; i < 6; i++) {
+        const b = add(geo.beam, beamMat);
+        b.position.set(0, 0.3 + i * 0.5, -LASER_D / 2);
+        beams.push(b);
+      }
+      Object.assign(g.userData, { beams, headMat });
+    } else if (kind === 'gap') {
+      add(geo.gap, gapMat);
+      const front = add(geo.gapEdge, gapEdge);
+      front.position.y = 0.03;
+      const back = add(geo.gapEdge, gapEdge);
+      back.position.set(0, 0.03, -GAP_LEN);
     } else {
       g.userData.body = add(geo.podBody, podMats[0]);
       add(geo.podTrim, trimMat, -0.95);
@@ -142,6 +234,13 @@ export function createEntities(scene) {
         g.add(coil);
       }
       g.add(new Mesh(new CylinderGeometry(0.03, 0.03, 0.4, 6), core));
+    } else if (kind === 'hyper') {
+      for (const z of [-0.12, 0.14]) {
+        const c = new Mesh(new ConeGeometry(0.22, 0.3, 3), core);
+        c.rotation.z = -Math.PI / 2;
+        c.position.x = z;
+        g.add(c);
+      }
     } else if (kind === 'shield') {
       g.add(new Mesh(new IcosahedronGeometry(0.26, 0), core));
     } else {
@@ -166,18 +265,32 @@ export function createEntities(scene) {
   cellMesh.count = 0;
   scene.add(cellMesh);
 
-  const pools = { barrier: [], gate: [], pod: [], magnet: [], spring: [], shield: [], x2: [] };
+  const gemMat = new MeshLambertMaterial({ color: '#ff4fd8', emissive: '#a0168a', flatShading: true });
+  const gemRing = new MeshBasicMaterial({ color: '#ffd1f5' });
+  function buildGem() {
+    const g = new Group();
+    g.add(new Mesh(geo.gem, gemMat));
+    const r = new Mesh(geo.ring, gemRing);
+    r.scale.setScalar(0.9);
+    g.add(r);
+    scene.add(g);
+    return g;
+  }
+
+  const pools = { barrier: [], gate: [], pod: [], roller: [], slider: [], laser: [], gap: [], magnet: [], spring: [], shield: [], x2: [], hyper: [], gem: [] };
   /** @type {LiveObstacle[]} */
   const obstacles = [];
   /** @type {LiveCell[]} */
   const cells = [];
   /** @type {LivePower[]} */
   const powers = [];
+  /** @type {LiveGem[]} */
+  const gems = [];
   let gen = null;
   let nextS = START_S;
 
   function acquire(key) {
-    const m = pools[key].pop() || (key in POWER_COLORS ? buildPower(key) : build(key));
+    const m = pools[key].pop() || (key === 'gem' ? buildGem() : key in POWER_COLORS ? buildPower(key) : build(key));
     m.visible = true;
     return m;
   }
@@ -193,20 +306,23 @@ export function createEntities(scene) {
         mesh.userData.ramp.visible = ob.ramp;
         mesh.userData.body.material = podMats[(Math.floor(ob.s) + ob.lane) % podMats.length];
       }
-      obstacles.push({ ...ob, mesh });
+      obstacles.push({ ...ob, mesh, done: false });
     }
     for (const c of row.cells) {
       if (cells.length >= MAX_CELLS) break;
       cells.push({ s: c.s, x: laneX(c.lane), y: c.y, pulled: false, px: 0, py: 0, pz: 0 });
     }
     if (row.power) powers.push({ ...row.power, mesh: acquire(row.power.kind) });
+    if (row.gem) gems.push({ ...row.gem, mesh: acquire('gem') });
   }
 
   function clear() {
     for (const ob of obstacles) release(ob.kind, ob.mesh);
     for (const p of powers) release(p.kind, p.mesh);
+    for (const g of gems) release('gem', g.mesh);
     obstacles.length = 0;
     powers.length = 0;
+    gems.length = 0;
     cells.length = 0;
     cellMesh.count = 0;
     gen = null;
@@ -215,6 +331,11 @@ export function createEntities(scene) {
   function removeCell(i) {
     cells[i] = cells[cells.length - 1];
     cells.pop();
+  }
+  function removeGem(i) {
+    release('gem', gems[i].mesh);
+    gems[i] = gems[gems.length - 1];
+    gems.pop();
   }
   function removePower(i) {
     release(powers[i].kind, powers[i].mesh);
@@ -228,24 +349,36 @@ export function createEntities(scene) {
     obstacles,
     cells,
     powers,
+    gems,
     clear,
-    /** Start a fresh run with a seeded generator. */
-    reset(seed) {
+    /** Start a fresh run with a seeded generator; the first row sits `lead` metres after d0. */
+    reset(seed, d0 = 0, lead = START_S) {
       clear();
       gen = createGenerator(seed);
-      nextS = START_S;
+      nextS = d0 + lead;
+    },
+    /** Drop every obstacle in [from, to] (used when reviving). */
+    clearAhead(from, to) {
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const ob = obstacles[i];
+        if (ob.s + ob.len < from || ob.s > to) continue;
+        release(ob.kind, ob.mesh);
+        obstacles[i] = obstacles[obstacles.length - 1];
+        obstacles.pop();
+      }
     },
     /** Generate rows up to the spawn horizon and recycle everything behind the hero. */
-    spawn(d, difficulty) {
+    spawn(d) {
       if (!gen) return;
       while (nextS < d + SPAWN_AHEAD) {
-        const row = gen.next(nextS, difficulty);
+        const row = gen.next(nextS);
         spawnRow(row);
         nextS = row.nextS;
       }
       for (let i = obstacles.length - 1; i >= 0; i--) {
         const ob = obstacles[i];
-        if (ob.s + ob.len > d - KEEP_BEHIND) continue;
+        const back = ob.kind === 'roller' ? rollerS(ob, d) + ob.len : ob.s + ob.len;
+        if (back > d - KEEP_BEHIND) continue;
         release(ob.kind, ob.mesh);
         obstacles[i] = obstacles[obstacles.length - 1];
         obstacles.pop();
@@ -256,14 +389,51 @@ export function createEntities(scene) {
       for (let i = powers.length - 1; i >= 0; i--) {
         if (powers[i].s < d - 4) removePower(i);
       }
+      for (let i = gems.length - 1; i >= 0; i--) {
+        if (gems[i].s < d - 4) removeGem(i);
+      }
     },
     removeCell,
+    removeGem,
     removePower,
     /** Place meshes for the current track position. */
     sync(d, time) {
+      const flash = Math.floor(time * 8) % 2 === 0;
       for (const ob of obstacles) {
+        const u = ob.mesh.userData;
+        if (ob.kind === 'roller') {
+          const rs = rollerS(ob, d);
+          ob.mesh.position.set(laneX(ob.lane), 0, -(rs - d));
+          u.spinner.rotation.x = -rs / (ROLLER_LEN / 2); // roll towards the camera
+          continue;
+        }
+        if (ob.kind === 'slider') {
+          ob.mesh.position.set(laneX(ob.lane), 0, -(ob.s - d));
+          const p = sliderProgress(ob, d);
+          const ahead = ob.s - d;
+          u.body.position.x = sliderX(ob, d) - laneX(ob.lane);
+          u.body.position.y = 0.08 * Math.sin(time * 5 + ob.s);
+          const dir = Math.sign(ob.to - ob.lane);
+          u.arrow.scale.x = dir;
+          const warn = ahead < TELEGRAPH && p < 1;
+          u.arrow.visible = warn && flash;
+          u.marker.visible = warn && !flash;
+          u.marker.position.x = laneX(ob.to) - laneX(ob.lane);
+          u.marker.rotation.y = -dir * Math.PI / 2;
+          continue;
+        }
+        if (ob.kind === 'laser') {
+          // On: solid red curtain. Off: faint green standby lines, so the rhythm reads at a glance.
+          const on = laserOn(ob, d);
+          for (const b of u.beams) {
+            b.material = on ? beamMat : idleBeamMat;
+            b.scale.y = on ? 1 : 0.4;
+          }
+          u.headMat.color.set(on ? '#ff2a4a' : '#3dff8a');
+        }
         ob.mesh.position.set(laneX(ob.lane), 0, -((ob.kind === 'pod' ? podFront(ob) : ob.s) - d));
       }
+      beamMat.opacity = 0.7 + 0.3 * Math.sin(time * 40);
       let n = 0;
       for (const c of cells) {
         m4.makeRotationY(time * 3 + c.s * 0.35);
@@ -276,6 +446,10 @@ export function createEntities(scene) {
       for (const p of powers) {
         p.mesh.position.set(laneX(p.lane), p.y + Math.sin(time * 3) * 0.15, -(p.s - d));
         p.mesh.rotation.y = time * 2.2;
+      }
+      for (const g of gems) {
+        g.mesh.position.set(laneX(g.lane), g.y + Math.sin(time * 3 + 1) * 0.15, -(g.s - d));
+        g.mesh.rotation.y = time * 2.6;
       }
     },
   };

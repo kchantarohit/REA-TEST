@@ -127,3 +127,31 @@ export const panelTexture = () =>
       g.fill();
     }
   });
+
+/** Missing road segment: a deep void fading darker towards the middle, with faint specks. */
+export const gapTexture = () =>
+  make(64, 128, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, '#2a1640');
+    grad.addColorStop(0.18, '#07040f');
+    grad.addColorStop(0.82, '#07040f');
+    grad.addColorStop(1, '#2a1640');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = `rgba(180,160,255,${Math.random() * 0.35})`;
+      g.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+    }
+  });
+
+/** Soft white dot for particles (snow, sparks, stars). */
+export const dotTexture = () =>
+  make(32, 32, (g, w) => {
+    const r = w / 2;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.45, 'rgba(255,255,255,0.85)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, w, w);
+  });

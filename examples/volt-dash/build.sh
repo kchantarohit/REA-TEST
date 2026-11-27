@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Volt Dash end to end: web bundle -> single offline index.html -> signed APK.
-# Output: out/volt-dash.apk. Needs node/npm, a JDK, and Android build tools on PATH
+# Output: out/volt-dash-v2.apk. Needs node/npm, a JDK, and Android build tools on PATH
 # (aapt v1, dalvik-exchange, zipalign, apksigner, keytool).
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -8,7 +8,7 @@ cd "$(dirname "$0")"
 ANDROID_JAR="${ANDROID_JAR:-/usr/lib/android-sdk/platforms/android-23/android.jar}"
 BUILD=build
 OUT=out
-APK="$OUT/volt-dash.apk"
+APK="$OUT/volt-dash-v2.apk" # v1 stays at out/volt-dash.apk; same package + key, so v2 installs as an update
 KEYSTORE=android/debug.keystore
 KS_PASS=android # debug-only key, safe to commit
 
@@ -26,7 +26,7 @@ mkdir -p "$BUILD/classes" "$OUT" android/assets
 step "inline into android/assets/index.html"
 node scripts/inline.mjs src/index.html "$BUILD/game.js" android/assets/index.html
 
-step "self-check (pattern generator)"
+step "self-check (track rules, stages, economy, save migration)"
 node scripts/selfcheck.mjs
 
 if [ ! -f android/res/mipmap-xxxhdpi/ic_launcher.png ]; then
