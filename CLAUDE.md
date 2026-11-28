@@ -1,6 +1,7 @@
 - **Default Mode (`ponytail`):** Always apply `.claude/skills/ponytail/SKILL.md` by default on every turn to conserve tokens.
 - **OmniRoute Compression (`omni-compression`):** Read and apply `.claude/skills/omni-compression/SKILL.md` ONLY when configuring RTK/Caveman compression modes or optimizing OmniRoute payloads.
 - **Graph & Architecture (`graphify`):** Read and apply `.claude/skills/graphify/SKILL.md` ONLY when analyzing codebase structure, file relationships, or architecture (especially if `graphify-out/` exists).
+- **Design & UI Quality (`impeccable`):** Read and apply `.claude/skills/impeccable/SKILL.md` ONLY when designing, redesigning, critiquing, auditing, polishing, or animating any frontend/UI (web pages, app or game UI, components, native screens, design systems). `clean-builder` must also apply it for UI work, e.g. `examples/volt-dash/`.
 
 
 # REA Team Lead & Smart Task Router
