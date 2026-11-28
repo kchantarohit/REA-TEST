@@ -1,4 +1,4 @@
-// Render the original Volt Dash launcher icon (Volt's face on a neon dusk road) to PNGs
+// Render the original Volt Dash launcher icon (courier Rio Vance on the dusk highway) to PNGs
 // with headless Chromium. Legacy icons go to mipmap-*dpi; the adaptive icon layers
 // (Android 8+) go to mipmap-xxxhdpi and are referenced from mipmap-anydpi-v26.
 import { mkdirSync } from 'node:fs';
@@ -12,36 +12,39 @@ const res = resolve(dirname(fileURLToPath(import.meta.url)), '../android/res');
 
 const defs = `
   <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#140834"/><stop offset=".55" stop-color="#4a1670"/><stop offset="1" stop-color="#ff5a8a"/>
-  </linearGradient>
-  <radialGradient id="shell" cx=".38" cy=".3" r=".78">
-    <stop offset="0" stop-color="#ffffff"/><stop offset=".62" stop-color="#e3e7f3"/><stop offset="1" stop-color="#8f98bb"/>
-  </radialGradient>
-  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-    <feGaussianBlur stdDeviation="9" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-  </filter>`;
+    <stop offset="0" stop-color="#140a22"/><stop offset=".55" stop-color="#43235f"/><stop offset="1" stop-color="#ff7a5a"/>
+  </linearGradient>`;
 
+// Dusk highway behind the courier: our signature palette, no glow filters.
 const background = `
   <rect width="512" height="512" fill="url(#sky)"/>
-  <circle cx="256" cy="372" r="170" fill="#ff9a5a" opacity=".45"/>
-  <rect x="0" y="368" width="512" height="144" fill="#1a0f36"/>
-  <g stroke-linecap="round" filter="url(#glow)">
-    <path d="M256 368 L60 512 M256 368 L452 512" stroke="#45f3ff" stroke-width="7"/>
-    <path d="M256 368 L-80 512 M256 368 L592 512" stroke="#ff4fd8" stroke-width="9"/>
-    <path d="M0 368 H512" stroke="#ff4fd8" stroke-width="4" opacity=".8"/>
+  <circle cx="256" cy="360" r="150" fill="#ffc46b" opacity=".55"/>
+  <rect x="0" y="360" width="512" height="152" fill="#22113a"/>
+  <g stroke-linecap="round">
+    <path d="M256 360 L70 512 M256 360 L442 512" stroke="#3ee6f0" stroke-width="8"/>
+    <path d="M256 360 L-60 512 M256 360 L572 512" stroke="#ff4f7b" stroke-width="10"/>
   </g>`;
 
+// Rio Vance: twists, headphones, teal dispatch jacket with an amber collar.
 const face = `
-  <g stroke-linecap="round">
-    <line x1="298" y1="128" x2="322" y2="66" stroke="#d6dbee" stroke-width="12"/>
-    <circle cx="324" cy="58" r="22" fill="#ff4fd8" filter="url(#glow)"/>
-    <circle cx="108" cy="282" r="32" fill="#ff8a2b"/><circle cx="96" cy="282" r="12" fill="#ff4fd8"/>
-    <circle cx="404" cy="282" r="32" fill="#ff8a2b"/><circle cx="416" cy="282" r="12" fill="#ff4fd8"/>
-    <circle cx="256" cy="270" r="150" fill="url(#shell)"/>
-    <path d="M132 352 Q256 424 380 352" fill="none" stroke="#ff8a2b" stroke-width="18"/>
-    <rect x="130" y="198" width="252" height="104" rx="52" fill="#141a30"/>
-    <rect x="162" y="232" width="188" height="36" rx="18" fill="#45f3ff" filter="url(#glow)"/>
-  </g>`;
+  <g stroke="#26122f" stroke-width="10" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M96 520 C104 420 170 372 256 372 C342 372 408 420 416 520 Z" fill="#1fb3b0"/>
+    <path d="M204 380 L256 438 L308 380" fill="none" stroke="#ffc46b" stroke-width="18"/>
+    <rect x="222" y="318" width="68" height="70" rx="20" fill="#8d5a3b"/>
+    <path d="M150 214 C150 132 196 92 256 92 C316 92 362 132 362 214 C362 300 316 352 256 352 C196 352 150 300 150 214 Z" fill="#8d5a3b"/>
+    <path d="M146 210 C140 120 196 74 256 74 C316 74 372 120 366 210 C346 170 306 150 256 150 C206 150 166 170 146 210 Z" fill="#1c1210"/>
+    ${[166, 196, 226, 256, 286, 316, 346].map((x, i) => `<rect x="${x - 13}" y="${44 + Math.abs(i - 3) * 9}" width="26" height="62" rx="13" fill="#1c1210"/>`).join('')}
+    <path d="M136 230 C136 120 188 70 256 70 C324 70 376 120 376 230" fill="none" stroke="#ff4f7b" stroke-width="22"/>
+    <rect x="112" y="200" width="52" height="88" rx="24" fill="#ff4f7b"/>
+    <rect x="348" y="200" width="52" height="88" rx="24" fill="#ff4f7b"/>
+  </g>
+  <g fill="#26122f">
+    <ellipse cx="214" cy="228" rx="13" ry="16"/><ellipse cx="298" cy="228" rx="13" ry="16"/>
+    <path d="M190 196 Q214 184 236 194" fill="none" stroke="#1c1210" stroke-width="10" stroke-linecap="round"/>
+    <path d="M276 194 Q298 184 322 196" fill="none" stroke="#1c1210" stroke-width="10" stroke-linecap="round"/>
+  </g>
+  <path d="M220 290 Q256 318 292 290" fill="#fff1dc" stroke="#26122f" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M248 238 Q244 262 258 266" fill="none" stroke="#5e3a26" stroke-width="8" stroke-linecap="round"/>`;
 
 const svg = (body, size) =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="${size}" height="${size}"><defs>${defs}` +
@@ -56,7 +59,7 @@ const targets = [
   })),
   // Adaptive layers (432px = 108dp at xxxhdpi); the face is scaled into the 72dp safe zone.
   { file: 'mipmap-xxxhdpi/ic_launcher_bg.png', size: 432, body: background },
-  { file: 'mipmap-xxxhdpi/ic_launcher_fg.png', size: 432, body: `<g transform="translate(256 266) scale(.72) translate(-256 -256)">${face}</g>` },
+  { file: 'mipmap-xxxhdpi/ic_launcher_fg.png', size: 432, body: `<g transform="translate(256 262) scale(.66) translate(-256 -256)">${face}</g>` },
 ];
 
 const browser = await chromium.launch();

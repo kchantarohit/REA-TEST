@@ -16,6 +16,8 @@ export const CELL_Y = 0.75;
 export const START_S = 55; // first row, measured from where the run starts
 export const MIN_GAP_TIME = 0.6; // guaranteed seconds between rows at the stage speed cap
 export const POWER_KINDS = ['magnet', 'spring', 'shield', 'x2', 'hyper'];
+export const LETTER_FIRST = 260; // first daily-word letter slot, metres into a run
+export const LETTER_EVERY = 360; // then one about every 360-560 m
 
 // Hero physics shared with main.js so the self-check can prove gaps are jumpable.
 export const GRAVITY = 48;
@@ -59,7 +61,8 @@ export const GAP_LEN = 3.2;
  * @typedef {'magnet'|'spring'|'shield'|'x2'|'hyper'} PowerKind
  * @typedef {{kind: PowerKind, lane: number, s: number, y: number}} PowerSpec
  * @typedef {{s: number, end: number, nextS: number, stage: number, safeLane: number, slots: string[],
- *   obstacles: Obstacle[], cells: CellSpec[], power: PowerSpec|null, gem: CellSpec|null}} Row
+ *   obstacles: Obstacle[], cells: CellSpec[], power: PowerSpec|null, gem: CellSpec|null, letter: CellSpec|null}} Row
+ *   `letter` is a slot for a daily-word token; entities only fill it while today's word still needs letters.
  */
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -134,6 +137,7 @@ export function createGenerator(seed) {
   const rnd = mulberry32(seed);
   let index = 0;
   let powerIn = 240; // track distance until a power-up may appear
+  let letterIn = LETTER_FIRST; // track distance until a daily-word letter slot
   const reserved = [-Infinity, -Infinity, -Infinity]; // lane stays empty until s passes this (roller path)
 
   function slotFor(stage, level, safe) {
@@ -261,7 +265,8 @@ export function createGenerator(seed) {
         else if (k === 'pod' && rnd() < 0.2) line(lane, front + 1, front + POD_LEN - 1, POD_H + CELL_Y); // spring-boots bonus
       });
 
-      const free = () => [0, 1, 2].filter((l) => slots[l] === 'none' && !cellLanes.has(l));
+      // Free = no obstacle in this row, no pickups, and no roller from an earlier row rolling down it.
+      const free = () => [0, 1, 2].filter((l) => slots[l] === 'none' && !cellLanes.has(l) && reserved[l] <= s);
       /** @type {PowerSpec|null} */
       let power = null;
       powerIn -= end - s;
@@ -281,6 +286,15 @@ export function createGenerator(seed) {
       if (index > 3 && rnd() < 0.035 && free().length) {
         const lanes = free();
         gem = { lane: lanes[Math.floor(rnd() * lanes.length)], s: front + 3, y: 1.0 };
+        cellLanes.add(gem.lane);
+      }
+      /** @type {CellSpec|null} */
+      let letter = null;
+      letterIn -= end - s;
+      if (letterIn <= 0 && !breather && free().length) {
+        const lanes = free();
+        letter = { lane: lanes[Math.floor(rnd() * lanes.length)], s: front + 1, y: 1.1 };
+        letterIn = LETTER_EVERY + rnd() * 200;
       }
 
       // Gap in seconds shrinks as the stage level rises; measured at the stage's speed cap
@@ -288,8 +302,9 @@ export function createGenerator(seed) {
       const gapSec = Math.max(0.72, 1.45 - 0.12 * level) * (0.9 + 0.25 * rnd());
       const gap = stageCap(stage) * gapSec;
       powerIn -= gap;
+      letterIn -= gap;
       index++;
-      return { s, end, nextS: end + gap, stage, safeLane, slots, obstacles, cells, power, gem };
+      return { s, end, nextS: end + gap, stage, safeLane, slots, obstacles, cells, power, gem, letter };
     },
   };
 }

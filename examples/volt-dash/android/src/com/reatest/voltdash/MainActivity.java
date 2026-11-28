@@ -20,7 +20,7 @@ public class MainActivity extends Activity {
                 | WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
         webView = new WebView(this);
-        webView.setBackgroundColor(Color.rgb(11, 6, 32));
+        webView.setBackgroundColor(Color.rgb(20, 10, 34));
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);

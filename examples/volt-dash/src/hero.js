@@ -1,5 +1,5 @@
-// The hero rig: positions, leans, squashes, flips and rolls whichever character model
-// is selected (characters.js). Faces -z while running (the chase camera sees its back);
+// The hero rig: positions, leans, squashes, flips and rolls whichever courier model
+// is selected (characters.js), and carries the Kick Scooter when one is ridden. Faces -z while running (the chase camera sees its back);
 // faces the camera on menus. The collision box is the same for every character.
 import {
   AdditiveBlending,
@@ -12,6 +12,7 @@ import {
 } from 'three';
 import { LANE_TIME, LANE_W } from './track.js';
 import { buildModel } from './characters.js';
+import { buildScooter } from './vehicles.js';
 import { blobTexture } from './textures.js';
 
 const TAU = Math.PI * 2;
@@ -21,7 +22,7 @@ const smooth = (t) => t * t * (3 - 2 * t);
 /**
  * @typedef {{time: number, running: boolean, speed: number, x: number, y: number, floor: number,
  *   grounded: boolean, vy: number, rolling: boolean, laneVel: number, facing: number,
- *   spring: boolean, shield: boolean, hyper: boolean, invuln: number, spinY?: number}} HeroFrame
+ *   spring: boolean, shield: boolean, hyper: boolean, invuln: number, spinY?: number, ride?: boolean}} HeroFrame
  */
 
 export function createHero(scene) {
@@ -57,17 +58,27 @@ export function createHero(scene) {
   const cache = {};
   let model = null;
   let modelId = '';
-  function setModel(id) {
-    if (id === modelId) return;
-    if (model) spin.remove(model.group);
-    model = cache[id] || (cache[id] = buildModel(id));
-    modelId = id;
-    spin.add(model.group);
+  /** @param {string} id @param {object} [outfit] colours of the worn outfit */
+  function setModel(id, outfit) {
+    if (id !== modelId) {
+      if (model) spin.remove(model.group);
+      model = cache[id] || (cache[id] = buildModel(id));
+      modelId = id;
+      spin.add(model.group);
+    }
+    if (outfit) model.setOutfit(outfit);
   }
-  setModel('volt');
+  setModel('rio');
 
-  const st = { flipT: 1, landK: 0, stumbleK: 0, rollK: 0, lean: 0, yaw: 0, bob: 0, crashK: 0, crashed: false, facing: Math.PI, blink: 2, popK: 0 };
-  const ctx = { lean: 0, crashed: false, eyesOpen: true, time: 0, running: false, speed: 0, vy: 0 };
+  // Kick Scooter: rides inside the spin group so jump flips become scooter tricks.
+  const scooter = buildScooter();
+  scooter.group.position.y = -0.8;
+  scooter.group.visible = false;
+  spin.add(scooter.group);
+  const wreck = { t: 1, vx: 0 }; // a broken scooter tumbling away
+
+  const st = { flipT: 1, landK: 0, stumbleK: 0, rollK: 0, lean: 0, yaw: 0, bob: 0, crashK: 0, crashed: false, caught: false, facing: Math.PI, blink: 2, popK: 0 };
+  const ctx = { lean: 0, crashed: false, eyesOpen: true, time: 0, running: false, speed: 0, vy: 0, grounded: true, rolling: false, ride: false, caught: false };
 
   return {
     setModel,
@@ -79,9 +90,28 @@ export function createHero(scene) {
       st.popK = 1;
     },
     reset() {
-      Object.assign(st, { flipT: 1, landK: 0, stumbleK: 0, rollK: 0, crashK: 0, crashed: false });
+      Object.assign(st, { flipT: 1, landK: 0, stumbleK: 0, rollK: 0, crashK: 0, crashed: false, caught: false });
       spin.rotation.x = 0;
       root.visible = true;
+      scooter.group.visible = false;
+      wreck.t = 1;
+    },
+    /** Show or hide the scooter under the courier's feet. */
+    ride(on) {
+      if (on) wreck.t = 1;
+      scooter.group.visible = on;
+      scooter.group.position.set(0, -0.8, 0);
+      scooter.group.rotation.set(0, 0, 0);
+    },
+    /** The scooter took the hit: it tumbles off to the side. */
+    scooterBreak() {
+      wreck.t = 0;
+      wreck.vx = Math.random() < 0.5 ? -1 : 1;
+    },
+    /** Clank grabbed the courier. */
+    caught() {
+      st.crashed = true;
+      st.caught = true;
     },
     jump() {
       st.flipT = 0;
@@ -97,6 +127,7 @@ export function createHero(scene) {
     },
     revive() {
       st.crashed = false;
+      st.caught = false;
       st.crashK = 0;
     },
     /** @param {number} dt @param {HeroFrame} s */
@@ -107,18 +138,20 @@ export function createHero(scene) {
       const lv = clamp(s.laneVel / (LANE_W / LANE_TIME), -1, 1);
       st.lean += (-lv * 0.5 - st.lean) * k(16);
       st.yaw += (-lv * 0.35 - st.yaw) * k(16);
-      root.position.set(s.x, s.y, smooth(st.crashK) * 0.6);
+      root.position.set(s.x, s.y + (st.caught ? smooth(st.crashK) * 0.9 : 0), smooth(st.crashK) * (st.caught ? 0.2 : 0.6));
       root.rotation.y = st.facing + st.yaw + (s.spinY || 0);
 
       st.stumbleK = Math.max(0, st.stumbleK - dt * 1.6);
       tilt.rotation.z = st.lean;
-      tilt.rotation.x = smooth(st.crashK) * 1.35 + Math.sin(st.stumbleK * 26) * 0.28 * st.stumbleK + (s.hyper ? -0.25 : 0);
+      // A crash pitches the courier forward; Clank's grab yanks them backwards off their feet.
+      const fall = smooth(st.crashK) * (st.caught ? -0.9 : 1.35);
+      tilt.rotation.x = fall + Math.sin(st.stumbleK * 26) * 0.28 * st.stumbleK + (s.hyper ? -0.25 : 0);
 
       st.rollK += ((s.rolling ? 1 : 0) - st.rollK) * k(20);
       st.landK = Math.max(0, st.landK - dt * 5);
       st.popK = Math.max(0, st.popK - dt * 2.2);
       const pop = Math.sin(st.popK * Math.PI);
-      const sy = (1 - 0.42 * st.rollK) * (1 - 0.25 * st.landK) * (1 + 0.12 * pop);
+      const sy = (1 - model.rollSquash * st.rollK) * (1 - 0.25 * st.landK) * (1 + 0.12 * pop);
       const sxz = (1 + 0.16 * st.rollK) * (1 + 0.14 * st.landK) * (1 - 0.06 * pop);
       squash.scale.set(sxz, sy, sxz);
       st.bob += dt * (s.running ? 16 : 3);
@@ -142,9 +175,19 @@ export function createHero(scene) {
       if (st.blink < -0.12) st.blink = 2 + Math.random() * 3;
       Object.assign(ctx, {
         lean: st.lean, crashed: st.crashed, eyesOpen: st.crashed || st.blink > 0, time: s.time,
-        running: s.running, speed: s.speed, vy: s.vy,
+        running: s.running, speed: s.speed, vy: s.vy, grounded: s.grounded, rolling: s.rolling, ride: !!s.ride && scooter.group.visible,
+        caught: st.caught,
       });
       model.update(dt, ctx);
+      if (scooter.group.visible) {
+        if (wreck.t < 1) {
+          wreck.t = Math.min(1, wreck.t + dt / 0.9);
+          const t = wreck.t;
+          scooter.group.position.set(wreck.vx * t * 2.2, -0.8 + Math.sin(t * Math.PI) * 1.2, t * 2.5);
+          scooter.group.rotation.set(t * 9, t * 4 * wreck.vx, t * 6);
+          if (t >= 1) scooter.group.visible = false;
+        } else scooter.update(dt, s.speed);
+      }
 
       shield.visible = s.shield;
       shield.scale.setScalar(1 + Math.sin(s.time * 6) * 0.03);

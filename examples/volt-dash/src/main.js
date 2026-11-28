@@ -1,5 +1,5 @@
 // Volt Dash entry: app state machine (menu / run / revive / results), player physics,
-// collisions, stage progression and the frame loop. Economy rules live in meta.js,
+// collisions, Clank's chase, combos, letters, the scooter, stage progression and the frame loop. Economy rules live in meta.js,
 // screens in ui.js, the save in save.js.
 import { PerspectiveCamera, Scene, Vector3, WebGLRenderer } from 'three';
 import * as T from './track.js';
@@ -7,6 +7,8 @@ import * as C from './catalog.js';
 import * as M from './meta.js';
 import { openSave } from './save.js';
 import { createAudio } from './audio.js';
+import { createChase } from './chase.js';
+import { buildClank } from './vehicles.js';
 import { POWER_COLORS, createEntities } from './entities.js';
 import { createHero } from './hero.js';
 import { createInput } from './input.js';
@@ -27,22 +29,24 @@ const HIT_X = 1.15; // lateral overlap for front hits
 const SIDE_X = 1.45; // lateral distance at which a pod's side bounces the hero back
 const INVULN_TIME = 1.5;
 const REVIVE_INVULN = 2.5;
-const STUMBLE_WINDOW = 4;
 const MAGNET_RANGE = 30;
 const HYPER_Y = 3.0; // Hyper Dash flies above every obstacle
 const HYPER_MUL = 1.6;
 const HYPER_AFTER = 1.2; // grace period after a dash ends
 const MENU_FOV = 58;
+const HUD_COLORS = { ...POWER_COLORS, scooter: '#ff4f7b' };
 const CAUSES = {
-  pod: 'Smacked into a cargo pod. Switch lanes or use a ramp.',
-  barrier: 'Tripped on a barrier. Swipe up to jump.',
-  gate: 'Clipped a gate. Swipe down to roll under.',
-  stumble: 'Two bumps in a row knocked you over.',
+  pod: 'Face-first into a cargo pod. Switch lanes or run up a ramp.',
+  barrier: 'Tripped on a barrier. Swipe up to hop it.',
+  gate: 'Clipped a gate. Swipe down to slide under.',
+  caught: 'Clank swept you up. Two side-bumps while he is close is one too many.',
   roller: 'Flattened by a rolling boulder. Dodge to another lane.',
   slider: 'A sliding pod caught you. Watch its flashing arrow.',
   laser: 'Zapped by a laser gate. Pass while its lights are green.',
-  gap: 'Fell through a gap. Jump over missing road.',
+  gap: 'Fell through a gap. Jump the missing road.',
 };
+const INTRO_CAM = 1.7; // run-start camera swing from Clank's side to the chase view
+const NEAR_MISS = 0.8; // seconds after leaving a lane that dodging its obstacle still counts
 
 function boot() {
   const params = new URLSearchParams(location.search);
@@ -61,7 +65,8 @@ function boot() {
   const S = () => save.data;
   const audio = createAudio({ sound: S().settings.sound, music: S().settings.music });
   const today = () => C.dayKey(new Date());
-  const view = { charIndex: 0, shopTab: 'upgrades' };
+  const view = { charIndex: 0, shopTab: 'upgrades', trophyTab: 'ach', outfitPick: -1 };
+  const debug = params.get('debug') === '1';
   const fmtMult = (m) => String(Math.round(m * 10) / 10);
   const viewState = () => ({
     ...view,
@@ -69,7 +74,14 @@ function boot() {
     badges: M.badges(S(), today()),
     missions: M.missions(S()),
     daily: C.dailyStatus(S().daily, today()),
+    word: M.wordStatus(S(), today()),
+    achievements: M.achievements(S()),
   });
+  /** Colours of the outfit `id` currently wears (or the one being previewed on the Crew page). */
+  const outfitOf = (id, preview = -1) => {
+    const c = C.charById(id);
+    return c.outfits[preview >= 0 ? preview : S().outfits[id].sel];
+  };
   const vibrate = (p) => {
     try {
       if (S().settings.vibe && navigator.vibrate) navigator.vibrate(p);
@@ -103,6 +115,16 @@ function boot() {
   const world = createWorld(scene, renderer);
   const hero = createHero(scene);
   const entities = createEntities(scene);
+  const chase = createChase();
+  const clank = buildClank();
+  clank.group.visible = false;
+  clank.group.scale.setScalar(0.62);
+  scene.add(clank.group);
+  const clankPos = { x: 0 };
+  entities.setLetterSource(() => {
+    const w = M.wordStatus(S(), today());
+    return w.done ? null : w.word[w.next];
+  });
 
   const G = {
     /** @type {'menu'|'playing'|'paused'|'dying'|'revive'|'over'} */
@@ -110,22 +132,23 @@ function boot() {
     time: 0, run: 0, d: 0, d0: 0, speed: 0, score: 0, cells: 0, gems: 0, streak: 0, lastCell: -9,
     shake: 0, dyingT: 0, invulnT: 0, cause: 'pod', stage: 1, mult: 1, dashTo: -1, wasHyper: false,
     shieldHits: 0, revivesPaid: 0, tokenUsed: false, tut: 0, missionT: 0,
-    useHeadstart: false, useBooster: false, reviveAllowed: false,
-    perk: { id: 'volt', value: 0, level: 1 }, jumpV: 0, springV: 0, grav: T.GRAVITY,
+    useHeadstart: false, useBooster: false, reviveAllowed: false, useScooter: false,
+    perk: { id: 'rio', kind: 'distance', value: 0, level: 1 }, jumpV: 0, springV: 0, grav: T.GRAVITY,
+    combo: { n: 0, last: -99 }, comboM: 1, introT: 0, rumbleT: 0, caughtBy: false,
     stats: /** @type {Record<string, number>} */ ({}),
     doneAtStart: [false, false, false],
     toasted: [false, false, false],
   };
   const P = {
     lane: 1, laneFrom: 1, x: 0, xFrom: 0, xTo: 0, laneT: 1, laneVel: 0, y: 0, vy: 0,
-    grounded: true, floor: 0, rollT: 0, jumpBuf: 0, stumbleAt: -99,
+    grounded: true, floor: 0, rollT: 0, jumpBuf: 0, leftLane: -1, leftAt: -99, scooter: 0,
     power: { magnet: 0, spring: 0, shield: 0, x2: 0, hyper: 0 },
     powerMax: { magnet: 1, spring: 1, shield: 1, x2: 1, hyper: 1 },
   };
 
   function resetPlayer() {
     Object.assign(P, { lane: 1, laneFrom: 1, x: 0, xFrom: 0, xTo: 0, laneT: 1, laneVel: 0, y: 0, vy: 0 });
-    Object.assign(P, { grounded: true, floor: 0, rollT: 0, jumpBuf: 0, stumbleAt: -99 });
+    Object.assign(P, { grounded: true, floor: 0, rollT: 0, jumpBuf: 0, leftLane: -1, leftAt: -99, scooter: 0 });
     for (const k in P.power) P.power[k] = 0;
   }
   const isHyper = () => P.power.hyper > 0 || G.d < G.dashTo;
@@ -136,7 +159,9 @@ function boot() {
     if (G.mode !== 'menu') return;
     ui.closeSheet();
     if (name === 'chars') view.charIndex = Math.max(0, C.CHARACTERS.findIndex((c) => c.id === S().selected));
-    hero.setModel(name === 'chars' ? C.CHARACTERS[view.charIndex].id : S().selected);
+    view.outfitPick = -1;
+    const id = name === 'chars' ? C.CHARACTERS[view.charIndex].id : S().selected;
+    hero.setModel(id, outfitOf(id));
     ui.setTab(name);
     refresh();
   }
@@ -153,8 +178,8 @@ function boot() {
     audio.play('error');
     vibrate([30, 40, 30]);
     ui.shake(el);
-    if (r.reason === 'funds') ui.toast({ ic: kind === 'gems' ? 'gem' : 'cell', color: '#ff4a5e', title: `Not enough ${kind === 'gems' ? 'Gems' : 'Cells'}` });
-    if (r.reason === 'level') ui.toast({ ic: 'lock', color: '#ff4a5e', title: 'Account level too low' });
+    if (r.reason === 'funds') ui.toast({ ic: kind === 'gems' ? 'gem' : 'cell', tone: 'bad', title: `Not enough ${kind === 'gems' ? 'Gems' : 'Sparks'}`, sub: 'Runs and jobs fill your pockets.' });
+    if (r.reason === 'level') ui.toast({ ic: 'lock', tone: 'bad', title: 'Your level is too low', sub: 'Finish runs and jobs to level up.' });
     return false;
   }
   function earn(prize, el) {
@@ -164,7 +189,13 @@ function boot() {
   function levelToast(ups) {
     if (!ups) return;
     audio.play('levelup');
-    ui.toast({ ic: 'star', color: '#ffb02e', title: `Level up! Level ${S().level}`, sub: `+${2 * ups} Gems · score bonus +${2 * (S().level - 1)}%` });
+    ui.toast({ ic: 'star', tone: 'gold', title: `Level ${S().level}! Nice work`, sub: `+${2 * ups} Gems, score bonus now +${2 * (S().level - 1)}%` });
+  }
+  function trophyToasts(list) {
+    for (const a of list || []) {
+      audio.play('trophy');
+      ui.toast({ ic: 'trophy', tone: 'gold', title: `Trophy: ${a.name}`, sub: `${a.desc} (+${a.gems} Gems)` });
+    }
   }
   const priceKind = (p) => (p.gems && !p.cells ? 'gems' : 'cells');
 
@@ -186,6 +217,61 @@ function boot() {
         view.shopTab = arg;
         refresh();
         break;
+      case 'trophy-tab':
+        audio.play('click');
+        view.trophyTab = arg;
+        refresh();
+        break;
+      case 'word':
+        audio.play('click');
+        ui.openSheet('word', S(), viewState());
+        break;
+      case 'claim-word': {
+        const r = M.claimWord(S(), today());
+        if (!r.ok) {
+          ui.shake(el);
+          audio.play('error');
+          break;
+        }
+        audio.play('word');
+        vibrate([20, 40, 20]);
+        earn(r.prize, el);
+        ui.toast({ ic: 'word', tone: 'good', title: `Word spelled! +${C.WORD_GEMS} Gems`, sub: 'A new word lands tomorrow.' });
+        trophyToasts(r.unlocked);
+        commit();
+        break;
+      }
+      case 'outfit': {
+        const c = C.CHARACTERS[view.charIndex];
+        const i = Number(arg);
+        audio.play('click');
+        if (S().chars[c.id] && S().outfits[c.id].own.includes(i)) {
+          M.wearOutfit(S(), c.id, i);
+          view.outfitPick = -1;
+          hero.setModel(c.id, outfitOf(c.id));
+          hero.pop();
+          commit();
+        } else {
+          view.outfitPick = i;
+          hero.setModel(c.id, outfitOf(c.id, i));
+          hero.pop();
+          refresh();
+        }
+        break;
+      }
+      case 'outfit-buy': {
+        const c = C.CHARACTERS[view.charIndex];
+        const i = view.outfitPick;
+        if (i < 0) break;
+        if (spend(M.wearOutfit(S(), c.id, i), el, 'gems')) {
+          view.outfitPick = -1;
+          hero.setModel(c.id, outfitOf(c.id));
+          hero.pop();
+          ui.toast({ ic: 'shirt', tone: 'good', title: `${c.outfits[i].name} unlocked`, sub: `${c.name.split(' ')[0]} is wearing it now.` });
+          refresh();
+        }
+        break;
+      }
       case 'play':
         if (G.mode !== 'menu') break;
         audio.play('click');
@@ -242,7 +328,7 @@ function boot() {
         applySettings();
         ui.closeSheet();
         setTab('home');
-        ui.toast({ ic: 'reset', color: '#ff4a5e', title: 'Progress reset' });
+        ui.toast({ ic: 'reset', tone: 'bad', title: 'Progress reset', sub: 'Fresh start. Rio is waiting.' });
         refresh();
         break;
       case 'daily':
@@ -259,7 +345,7 @@ function boot() {
         audio.play('claim');
         vibrate(25);
         earn(r.prize, el);
-        ui.toast({ ic: 'calendar', color: '#ff6aa8', title: `Day ${r.slot + 1} reward claimed!` });
+        ui.toast({ ic: 'calendar', tone: 'good', title: `Day ${r.slot + 1} reward claimed`, sub: 'See you tomorrow, courier.' });
         commit();
         break;
       }
@@ -282,7 +368,8 @@ function boot() {
       case 'char': {
         const n = C.CHARACTERS.length;
         view.charIndex = (view.charIndex + Number(arg) + n) % n;
-        hero.setModel(C.CHARACTERS[view.charIndex].id);
+        view.outfitPick = -1;
+        hero.setModel(C.CHARACTERS[view.charIndex].id, outfitOf(C.CHARACTERS[view.charIndex].id));
         hero.pop();
         audio.play('click');
         refresh();
@@ -298,9 +385,11 @@ function boot() {
         break;
       case 'char-unlock': {
         const c = C.charById(arg);
-        if (spend(M.unlockChar(S(), arg), el, priceKind(c.unlock))) {
+        const r = M.unlockChar(S(), arg);
+        if (spend(r, el, priceKind(c.unlock))) {
           hero.pop();
-          ui.toast({ ic: 'chars', color: c.color, title: `${c.name} unlocked!`, sub: 'Selected for your next run' });
+          ui.toast({ ic: 'chars', tone: 'good', title: `${c.name.split(' ')[0]} joined the crew`, sub: 'Ready for your next run.' });
+          trophyToasts(r.unlocked);
         }
         break;
       }
@@ -308,7 +397,7 @@ function boot() {
         if (spend(M.upgradeChar(S(), arg), el, 'cells')) {
           hero.pop();
           const c = C.charById(arg);
-          ui.toast({ ic: 'star', color: c.color, title: `${c.name} reached level ${S().chars[arg]}`, sub: c.perkText(S().chars[arg]) });
+          ui.toast({ ic: 'star', tone: 'gold', title: `${c.name.split(' ')[0]} is now level ${S().chars[arg]}`, sub: c.perkText(S().chars[arg]) });
         }
         break;
       case 'claim': {
@@ -317,7 +406,7 @@ function boot() {
         audio.play('claim');
         vibrate(25);
         earn(r.reward, el);
-        if (r.tierUp) ui.toast({ ic: 'missions', color: '#8a5cff', title: `Multiplier x${S().missions.tier}!`, sub: 'New missions unlocked' });
+        if (r.tierUp) ui.toast({ ic: 'missions', tone: 'gold', title: `Score multiplier x${S().missions.tier}`, sub: 'Three fresh jobs on the board.' });
         levelToast(r.levelUps);
         commit();
         break;
@@ -358,6 +447,8 @@ function boot() {
     G.useHeadstart = use('headstart');
     G.useBooster = use('booster');
     G.reviveAllowed = use('revive');
+    G.useScooter = use('scooter');
+    if (G.useScooter) s.items.scooter--;
     if (G.useHeadstart) s.items.headstart--;
     if (G.useBooster) s.items.booster--;
     save.persist();
@@ -370,11 +461,11 @@ function boot() {
     const s = S();
     const d0 = T.stageStart(debugStage);
     resetPlayer();
-    hero.setModel(s.selected);
+    hero.setModel(s.selected, outfitOf(s.selected));
     hero.reset();
     G.perk = M.perk(s);
-    const nimbus = G.perk.id === 'nimbus' ? 1 + G.perk.value / 100 : 1;
-    G.grav = T.GRAVITY * (G.perk.id === 'nimbus' ? 0.86 : 1);
+    const nimbus = G.perk.kind === 'jump' ? 1 + G.perk.value / 100 : 1;
+    G.grav = T.GRAVITY * (G.perk.kind === 'jump' ? 0.86 : 1);
     G.jumpV = Math.sqrt(2 * G.grav * T.JUMP_H * nimbus);
     G.springV = Math.sqrt(2 * G.grav * SPRING_H);
     G.tut = s.tutorialDone ? 0 : 1;
@@ -383,8 +474,15 @@ function boot() {
       stage: debugStage, revivesPaid: 0, tokenUsed: false, dashTo: G.useHeadstart ? d0 + C.HEADSTART_M : -1, wasHyper: false,
       shieldHits: 0, missionT: 0, toasted: [false, false, false],
       mult: C.scoreMultiplier(s.missions.tier, s.level, G.useBooster),
-      stats: { jumps: 0, gates: 0, powers: 0, lanes: 0 },
+      stats: { jumps: 0, gates: 0, powers: 0, lanes: 0, rolls: 0, bestCombo: 0, escapes: 0, caught: 0, scooter: G.useScooter ? 1 : 0 },
+      combo: { n: 0, last: -99 }, comboM: 1, introT: INTRO_CAM, rumbleT: 0.4, caughtBy: false,
     });
+    if (G.useScooter) {
+      P.scooter = C.SCOOTER_TIME;
+      hero.ride(true);
+    }
+    chase.start();
+    clankPos.x = 0;
     G.doneAtStart = M.missions(s).map((m) => m.done);
     entities.reset(fixedSeed ?? (Math.random() * 2 ** 31) >>> 0, d0, G.tut ? T.START_S + 70 : T.START_S);
     entities.spawn(d0);
@@ -398,7 +496,10 @@ function boot() {
     ui.banner(G.stage, T.stageName(G.stage), theme);
     audio.play('start');
     if (G.useHeadstart) audio.play('hyper');
-    if (G.useBooster) ui.toast({ ic: 'booster', color: '#ffb02e', title: 'Score Booster active', sub: `Multiplier x${fmtMult(G.mult)}` });
+    if (G.useBooster) ui.toast({ ic: 'booster', tone: 'gold', title: 'Score Booster on', sub: `Multiplier x${fmtMult(G.mult)} this run` });
+    if (G.useScooter) audio.play('scooter');
+    ui.letters(M.wordStatus(s, today()));
+    ui.combo(0, 0, 1);
     last = performance.now();
   }
 
@@ -427,15 +528,18 @@ function boot() {
     G.dashTo = -1;
     world.setTheme(0, true);
     world.reset(0);
+    chase.hide();
     audio.song(0, 'menu');
     audio.unlock();
     ui.tutorial(0);
+    ui.chase(0);
     ui.clearBanner();
     ui.closeSheet();
     ui.show('menu');
     setTab('home');
   }
 
+  /** A deadly hit. Shield, then scooter, soak it up; otherwise the courier goes down and Clank lunges. */
   function crash(cause) {
     if (god) return false;
     if (P.power.shield > 0) {
@@ -447,13 +551,33 @@ function boot() {
       vibrate(40);
       return false;
     }
+    if (P.scooter > 0) {
+      P.scooter = 0;
+      hero.scooterBreak();
+      G.invulnT = INVULN_TIME;
+      G.shake = 0.5;
+      audio.play('scooterBreak');
+      vibrate(60);
+      ui.toast({ ic: 'scooter', tone: 'bad', title: 'Scooter took the hit', sub: 'You are on foot now.' });
+      return false;
+    }
     G.mode = 'dying';
     G.dyingT = 0;
     G.cause = cause;
     G.shake = 0.7;
-    hero.crash();
-    audio.play('crash');
-    vibrate(160);
+    G.caughtBy = cause === 'caught';
+    chase.lunge();
+    if (G.caughtBy) {
+      G.stats.caught++;
+      hero.caught();
+      audio.play('caught');
+      ui.caught();
+    } else {
+      hero.crash();
+      audio.play('crash');
+    }
+    vibrate(G.caughtBy ? [80, 60, 160] : 160);
+    resetCombo();
     return true;
   }
 
@@ -487,7 +611,9 @@ function boot() {
     entities.clearAhead(G.d - 6, G.d + 50);
     hero.revive();
     hero.reset();
-    Object.assign(P, { y: 0, vy: 0, grounded: true, floor: 0, rollT: 0, jumpBuf: 0, stumbleAt: -99 });
+    Object.assign(P, { y: 0, vy: 0, grounded: true, floor: 0, rollT: 0, jumpBuf: 0, scooter: 0 });
+    chase.hide();
+    ui.chase(0);
     G.invulnT = REVIVE_INVULN;
     G.mode = 'playing';
     ui.show('hud');
@@ -505,6 +631,7 @@ function boot() {
     s.tutorialDone = true;
     save.persist();
     levelToast(res.levelUps);
+    trophyToasts(res.unlocked);
     return { score, stats, res };
   }
 
@@ -517,10 +644,11 @@ function boot() {
       isBest: res.isBest,
       cause: CAUSES[G.cause],
       stage: G.stage,
+      caught: G.caughtBy,
       tally: [
         { ic: 'flag', label: 'Distance', value: stats.meters, suffix: ' m' },
-        { ic: 'cell', label: 'Cells', value: G.cells },
-        { ic: 'gem', label: 'Gems', value: G.gems },
+        { ic: 'cell', label: 'Sparks', value: G.cells },
+        { ic: 'combo', label: 'Best combo', value: G.stats.bestCombo },
         { ic: 'star', label: 'XP', value: res.xp },
       ],
       missions: ms.map((m) => ({ text: m.text, progress: m.progress, target: m.target, done: m.done })),
@@ -553,7 +681,7 @@ function boot() {
       if (m.done && !G.doneAtStart[i] && !G.toasted[i]) {
         G.toasted[i] = true;
         audio.play('claim');
-        ui.toast({ ic: 'missions', color: '#3ddc84', title: 'Mission complete!', sub: m.text });
+        ui.toast({ ic: 'missions', tone: 'good', title: 'Job done!', sub: m.text });
       }
     });
   }
@@ -563,6 +691,8 @@ function boot() {
     const target = P.lane + dir;
     if (target < 0 || target >= T.LANES) return;
     P.laneFrom = P.lane;
+    P.leftLane = P.lane;
+    P.leftAt = G.run;
     P.lane = target;
     P.xFrom = P.x;
     P.xTo = T.laneX(target);
@@ -593,6 +723,7 @@ function boot() {
     if (!P.grounded) P.vy = Math.min(P.vy, FAST_FALL_V);
     P.rollT = ROLL_TIME;
     P.jumpBuf = 0;
+    G.stats.rolls++;
     audio.play('roll');
     if (G.tut === 3) setTut(0);
   }
@@ -600,7 +731,7 @@ function boot() {
   function setTut(step) {
     G.tut = step;
     ui.tutorial(step);
-    if (step === 0) ui.toast({ ic: 'check', color: '#3ddc84', title: "You're ready!", sub: 'Grab Cells, dodge everything' });
+    if (step === 0) ui.toast({ ic: 'check', tone: 'good', title: "You've got this", sub: 'Grab Sparks. Keep ahead of Clank.' });
   }
 
   /** @param {import('./input.js').Action} a */
@@ -695,14 +826,66 @@ function boot() {
     return null;
   }
 
-  function stumble() {
+  /** Side bump: Clank closes in; a second bump while he is close gets you caught. */
+  function stumble(force = false) {
     G.shake = 0.4;
     hero.stumble();
     audio.play('bump');
     vibrate(30);
-    if (safe()) return;
-    if (G.run - P.stumbleAt < STUMBLE_WINDOW) crash('stumble');
-    else P.stumbleAt = G.run;
+    resetCombo();
+    if (safe() && !force) return;
+    if (chase.stumble() === 'caught') {
+      if (!crash('caught')) {
+        chase.release(); // a shield or the scooter shook him off
+        ui.chase(0);
+      }
+      return;
+    }
+    G.shake = 0.75;
+    G.rumbleT = 0;
+    ui.chaseWarn();
+    vibrate([40, 30, 60]);
+  }
+
+  // ---------- combo ----------
+  function resetCombo() {
+    G.combo = { n: 0, last: -99 };
+    G.comboM = 1;
+    ui.combo(0, 0, 1);
+  }
+  /** @param {'jump'|'roll'|'near'} kind */
+  function trick(kind) {
+    G.combo = C.comboAdd(G.combo, G.run);
+    const n = G.combo.n;
+    G.stats.bestCombo = Math.max(G.stats.bestCombo, n);
+    G.comboM = C.comboMult(n);
+    const word = C.comboWord(n);
+    ui.combo(n, 1, G.comboM, kind);
+    if (word) {
+      ui.comboPop(word, n, G.comboM);
+      audio.play('combo', Math.floor(n / 3));
+      vibrate(15);
+    }
+  }
+  const JUMP_TRICK = new Set(['barrier', 'gap']);
+  const DODGE_TRICK = new Set(['pod', 'roller', 'slider', 'barrier', 'gate', 'laser']);
+  /** Score tricks for every obstacle the hero has just cleared. */
+  function scoreTricks(d, hyper) {
+    for (const ob of entities.obstacles) {
+      if (ob.passed) continue;
+      const back = ob.kind === 'roller' ? T.rollerS(ob, d) + ob.len : ob.s + ob.len;
+      if (d - HALF_D <= back) continue;
+      ob.passed = true;
+      if (hyper || G.mode !== 'playing') continue;
+      const lane = T.meetLane(ob);
+      const ox = ob.kind === 'slider' ? T.sliderX(ob, d) : T.laneX(ob.lane);
+      if (Math.abs(P.x - ox) < HIT_X) {
+        if (ob.kind === 'gate' && P.rollT > 0) trick('roll');
+        else if (JUMP_TRICK.has(ob.kind) && !P.grounded && P.y > 0.35) trick('jump');
+      } else if (DODGE_TRICK.has(ob.kind) && P.leftLane === lane && G.run - P.leftAt < NEAR_MISS && (ob.kind !== 'laser' || T.laserOn(ob, ob.s))) {
+        trick('near');
+      }
+    }
   }
 
   function bounce() {
@@ -718,11 +901,11 @@ function boot() {
 
   function collectCell() {
     G.cells++;
-    G.score += 5 * G.mult * x2();
+    G.score += 5 * G.mult * x2() * G.comboM;
     G.streak = G.time - G.lastCell < 0.45 ? G.streak + 1 : 0;
     G.lastCell = G.time;
     audio.play('cell', G.streak);
-    if (G.perk.id === 'orbit' && Math.random() * 100 < G.perk.value) {
+    if (G.perk.kind === 'gems' && Math.random() * 100 < G.perk.value) {
       G.gems++;
       audio.play('gem');
     }
@@ -732,7 +915,7 @@ function boot() {
     const dur = M.powerDuration(S(), kind);
     P.power[kind] = dur;
     P.powerMax[kind] = dur;
-    if (kind === 'shield') G.shieldHits = G.perk.id === 'moss' && G.perk.level >= 5 ? 2 : 1;
+    if (kind === 'shield') G.shieldHits = G.perk.kind === 'shield' && G.perk.level >= 5 ? 2 : 1;
     G.stats.powers++;
     audio.play(kind === 'hyper' ? 'hyper' : 'power');
     vibrate(20);
@@ -764,12 +947,26 @@ function boot() {
       audio.play('gem');
       vibrate(20);
     }
+    const letters = entities.letters;
+    for (let i = letters.length - 1; i >= 0; i--) {
+      const l = letters[i];
+      if (!near(l.s, T.laneX(l.lane), l.y, 1.0, 1.15, 1.4)) continue;
+      entities.removeLetter(i);
+      const idx = M.collectLetter(S(), today());
+      if (idx < 0) continue;
+      save.persist(); // letters persist across runs today, even if this run ends badly
+      const w = M.wordStatus(S(), today());
+      ui.letters(w, idx);
+      audio.play(w.done ? 'word' : 'letter');
+      vibrate(25);
+      if (w.done) ui.toast({ ic: 'word', tone: 'good', title: `You spelled ${w.word}!`, sub: `Claim ${C.WORD_GEMS} Gems on the home screen.` });
+    }
   }
 
   function step(h, v, hyper) {
     G.d += v * h;
-    const voltBonus = G.perk.id === 'volt' ? 1 + G.perk.value / 100 : 1;
-    G.score += v * h * G.mult * x2() * voltBonus; // 1 point per metre at x1
+    const voltBonus = G.perk.kind === 'distance' ? 1 + G.perk.value / 100 : 1;
+    G.score += v * h * G.mult * x2() * voltBonus * G.comboM; // 1 point per metre at x1
     const d = G.d;
 
     if (P.laneT < 1) {
@@ -811,6 +1008,7 @@ function boot() {
       const hit = hitTest(d);
       if (hit && crash(hit)) return;
     }
+    scoreTricks(d, hyper);
     for (const ob of entities.obstacles) {
       if (ob.kind !== 'gate' || ob.done || d - HALF_D <= ob.s + ob.len) continue;
       ob.done = true;
@@ -853,6 +1051,8 @@ function boot() {
   const camLook = new Vector3(0, 1.05, 0);
   const tgtPos = new Vector3();
   const tgtLook = new Vector3();
+  const introPos = new Vector3();
+  const introLook = new Vector3();
   let runFov = 70;
 
   /** Vertical FOV that keeps ~50 degrees horizontally, so all three lanes fit in portrait. */
@@ -864,18 +1064,32 @@ function boot() {
   function updateCamera(dt) {
     const menu = G.mode === 'menu';
     if (menu && ui.tab === 'chars') {
-      tgtPos.set(0, 1.7, 5.8);
+      // Close enough to read faces; the courier stands in the band between title and card.
+      tgtPos.set(0, 1.35, 4.2);
       tgtLook.set(0, 0.55, 0);
     } else if (menu) {
       tgtPos.set(1.15, 1.85, 5.0);
       tgtLook.set(0, 1.05, 0);
+    } else if (G.mode === 'dying' || G.mode === 'revive' || G.mode === 'over') {
+      // Swing round in front of the courier so Clank's lunge reads face-on.
+      tgtPos.set(P.x + 2.4, 2.3 + Math.max(0, P.floor), -6.4);
+      tgtLook.set(P.x * 0.6, 1.3 + Math.max(0, P.floor), 1.8);
     } else {
       const floor = Math.max(0, P.floor);
       const lift = floor * 0.75 + Math.max(0, P.y - floor) * 0.2;
-      tgtPos.set(P.x * 0.4, 4.6 + lift, 5.6);
+      // While Clank is close the camera backs up and rises so his roof stays below the action.
+      const dg = chase.mode === 'intro' ? 1 : chase.danger();
+      tgtPos.set(P.x * 0.4, 4.6 + lift + dg * 1.6, 5.6 + dg * 1.0);
       tgtLook.set(P.x * 0.5, 0.3 + lift * 0.8, -14);
+      if (G.introT > 0) {
+        // Run start: begin beside the courier with Clank looming behind, then swing to the chase view.
+        const u = G.introT / INTRO_CAM;
+        const w = u * u * (3 - 2 * u);
+        tgtPos.lerp(introPos.set(P.x + 3.4, 2.5, -8.2), w);
+        tgtLook.lerp(introLook.set(0, 1.3, 1.6), w);
+      }
     }
-    const k = 1 - Math.exp(-dt * (menu ? 3 : 6));
+    const k = 1 - Math.exp(-dt * (menu ? 3 : G.mode === 'dying' ? 4 : 6));
     camPos.lerp(tgtPos, k);
     camLook.lerp(tgtLook, k);
     const fov = menu ? MENU_FOV : runFov;
@@ -899,7 +1113,7 @@ function boot() {
     time: 0, running: false, speed: 0, x: 0, y: 0, floor: 0, grounded: true, vy: 0,
     rolling: false, laneVel: 0, facing: Math.PI, spring: false, shield: false, hyper: false, invuln: 0, spinY: 0,
   };
-  const powerFracs = { magnet: 0, spring: 0, shield: 0, x2: 0, hyper: 0 };
+  const powerFracs = { magnet: 0, spring: 0, shield: 0, x2: 0, hyper: 0, scooter: 0 };
 
   function update(dt) {
     G.time += dt;
@@ -918,6 +1132,32 @@ function boot() {
       for (let i = 0; i < n && G.mode === 'playing'; i++) step(dt / n, v, hyper);
       for (const k in P.power) P.power[k] = Math.max(0, P.power[k] - dt);
       G.invulnT = Math.max(0, G.invulnT - dt);
+      G.introT = Math.max(0, G.introT - dt);
+      if (P.scooter > 0) {
+        P.scooter = Math.max(0, P.scooter - dt);
+        if (P.scooter === 0) {
+          hero.ride(false);
+          ui.toast({ ic: 'scooter', tone: 'gold', title: 'Scooter ride over', sub: 'Back on foot. Legs, do your thing.' });
+        }
+      }
+      if (G.combo.n && !C.comboLive(G.combo, G.run)) resetCombo();
+      else if (G.combo.n) ui.combo(G.combo.n, 1 - (G.run - G.combo.last) / C.COMBO_WINDOW, G.comboM);
+      if (chase.update(dt) === 'escaped') {
+        G.stats.escapes++;
+        audio.play('escape');
+        ui.chaseEscaped();
+      }
+      const danger = chase.danger();
+      if (danger > 0) {
+        G.shake = Math.max(G.shake, 0.06 + 0.06 * danger);
+        G.rumbleT -= dt;
+        if (G.rumbleT <= 0) {
+          G.rumbleT = 0.75;
+          audio.play('rumble');
+          vibrate(18);
+        }
+      }
+      ui.chase(danger);
       if (G.mode === 'playing') {
         magnet(dt, hyper);
         entities.spawn(G.d);
@@ -937,14 +1177,18 @@ function boot() {
           checkMissions();
         }
       }
-      for (const k in powerFracs) powerFracs[k] = P.power[k] > 0 ? P.power[k] / P.powerMax[k] : 0;
+      for (const k in P.power) powerFracs[k] = P.power[k] > 0 ? P.power[k] / P.powerMax[k] : 0;
+      powerFracs.scooter = P.scooter / C.SCOOTER_TIME;
       if (G.d < G.dashTo) powerFracs.hyper = Math.max(powerFracs.hyper, (G.dashTo - G.d) / C.HEADSTART_M);
       ui.hud(G.score, G.cells, G.gems, `x${fmtMult(G.mult * x2())}`);
-      ui.powers(powerFracs, POWER_COLORS);
+      ui.powers(powerFracs, HUD_COLORS);
       ui.stage(G.stage, (G.d - T.stageStart(G.stage)) / T.STAGE_LEN, T.stageName(G.stage));
     } else if (G.mode === 'dying') {
       G.dyingT += dt;
-      if (G.dyingT >= 0.95) afterDeath();
+      chase.update(dt);
+      if (G.dyingT >= (G.caughtBy ? 1.6 : 1.15)) afterDeath();
+    } else if (G.mode === 'revive' || G.mode === 'over') {
+      chase.update(dt);
     }
     P.laneVel = (P.x - prevX) / dt;
 
@@ -968,8 +1212,17 @@ function boot() {
       shield: P.power.shield > 0,
       hyper: G.mode === 'playing' && isHyper(),
       invuln: G.invulnT,
+      ride: P.scooter > 0,
     });
     hero.update(dt, heroFrame);
+    // Clank trails the courier's lane lazily and rides on the road whatever the courier stands on.
+    const showClank = !menu && chase.gap < 14;
+    clank.group.visible = showClank;
+    if (showClank) {
+      clankPos.x += (P.x - clankPos.x) * (1 - Math.exp(-dt * (chase.mode === 'caught' ? 8 : 2.2)));
+      clank.group.position.set(clankPos.x, 0, chase.gap);
+      clank.update(dt, { time: G.time, speed: G.mode === 'playing' ? G.speed : 4, danger: chase.danger(), lunge: chase.mode === 'caught', lowFx: S().settings.quality === 'low' });
+    }
     updateCamera(dt);
   }
 
@@ -1044,15 +1297,26 @@ function boot() {
   window.__voltState = () => ({
     mode: G.mode, lane: P.lane, d: G.d, score: Math.floor(G.score), cells: G.cells, gems: G.gems, stage: G.stage,
     hyper: isHyper(), tab: ui.tab, sheet: ui.sheet, tut: G.tut,
-    ahead: entities.obstacles.map((o) => ({ k: o.kind, a: Math.round(o.s - G.d) })),
+    chase: chase.mode, gap: Math.round(chase.gap * 10) / 10, combo: G.combo.n, scooter: P.scooter, cause: G.cause,
+    ahead: entities.obstacles.map((o) => ({ k: o.kind, a: Math.round(o.s - G.d), l: o.lane })),
+    letters: entities.letters.map((l) => ({ ch: l.ch, a: Math.round(l.s - G.d), l: l.lane })),
   });
+  // Test hooks for the screenshot script only (?debug=1); the APK never passes it.
+  if (debug) {
+    window.__voltDebug = {
+      stumble: () => G.mode === 'playing' && stumble(true), // bypasses god/invulnerability so Clank can be filmed
+      trick: (n = 1) => {
+        for (let i = 0; i < n; i++) trick('jump');
+      },
+    };
+  }
   window.__voltSave = () => JSON.parse(JSON.stringify(S()));
 
   applySettings();
   world.setTheme(0, true);
   world.reset(0);
   audio.song(0, 'menu');
-  if (save.migrated) ui.toast({ ic: 'check', color: '#3ddc84', title: 'Welcome to Volt Dash 2.0!', sub: 'Your best score and Cells came with you' });
+  if (save.migrated) ui.toast({ ic: 'check', tone: 'good', title: 'Welcome to Volt Dash 3.0', sub: save.migrated === 'v2' ? 'Your crew, Sparks and upgrades came with you.' : 'Your best score and Sparks came with you.' });
   ui.show('menu');
   setTab('home');
   requestAnimationFrame(frame);

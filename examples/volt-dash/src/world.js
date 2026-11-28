@@ -1,6 +1,7 @@
 // The highway and its surroundings for the five stage themes: sky dome, sun, ridges,
-// scrolling road, recycled scenery chunks (one prop style per theme) and weather
-// particles. setTheme() lerps every colour and swaps prop styles over ~2 s.
+// scrolling road, recycled scenery chunks (one prop style per theme) and weather:
+// night lights (Neon City), sunset (Sunset Canyon), snow (Frost Line), rain + lightning
+// (Storm Foundry), stars (Cosmic Skyway). setTheme() lerps every colour and swaps prop styles over ~2 s.
 import {
   AdditiveBlending,
   BackSide,
@@ -15,6 +16,8 @@ import {
   Fog,
   Group,
   HemisphereLight,
+  LineBasicMaterial,
+  LineSegments,
   Mesh,
   MeshBasicMaterial,
   MeshLambertMaterial,
@@ -35,6 +38,7 @@ const ROAD_LEN = 260;
 const CHUNK_LEN = 40;
 const CHUNKS = 5;
 const SWAP_TIME = 2;
+const FLASH_C = new Color('#d8ccff');
 const rand = (a, b) => a + Math.random() * (b - a);
 
 /** Colour sets per theme. road/ground are multiplied over the textures. */
@@ -42,31 +46,31 @@ const THEMES = [
   { // Neon City
     top: '#0c0724', mid: '#3a1863', low: '#6b2a72', glow: '#ff8a63', fog: '#6b2a72', hemi: '#a596ff', hemiG: '#2b1036',
     key: '#ffc9a6', road: '#ffffff', ground: '#ffffff', lane: '#45f3ff', edge: '#ff4fd8', ridge: '#2a1142', curb: '#251a45',
-    roadE: '#000000', groundE: '#000000', sun: 1, snow: 0, sparks: 0, stars: 0, groundA: 1,
+    roadE: '#000000', groundE: '#000000', sun: 1, snow: 0, sparks: 0, stars: 0, groundA: 1, rain: 0,
   },
   { // Sunset Canyon
     top: '#2a1035', mid: '#b5452e', low: '#e0773f', glow: '#ffd27a', fog: '#c9683b', hemi: '#ffd2a8', hemiG: '#5a2416',
     key: '#ffe0b0', road: '#ffd2b4', ground: '#ffb48a', lane: '#ffe07a', edge: '#ff6a2e', ridge: '#7c3320', curb: '#7a3a24',
-    roadE: '#3a1a10', groundE: '#8a3a18', sun: 1, snow: 0, sparks: 0, stars: 0, groundA: 1,
+    roadE: '#3a1a10', groundE: '#8a3a18', sun: 1, snow: 0, sparks: 0, stars: 0, groundA: 1, rain: 0,
   },
   { // Frost Line
     top: '#0b2550', mid: '#3d7bb6', low: '#b4dbf4', glow: '#effaff', fog: '#a7d0ec', hemi: '#e6f6ff', hemiG: '#557590',
     key: '#ffffff', road: '#d8ecff', ground: '#ffffff', lane: '#4fd8ff', edge: '#ffffff', ridge: '#8db4d6', curb: '#9ab8d4',
-    roadE: '#24364e', groundE: '#b4cde2', sun: 0.35, snow: 1, sparks: 0, stars: 0, groundA: 1,
+    roadE: '#24364e', groundE: '#b4cde2', sun: 0.35, snow: 1, sparks: 0, stars: 0, groundA: 1, rain: 0,
   },
   { // Storm Foundry
     top: '#040406', mid: '#1b1114', low: '#3a1916', glow: '#8a2a14', fog: '#2b1513', hemi: '#8a6a74', hemiG: '#1a0a0a',
     key: '#ff9a70', road: '#b0a0a0', ground: '#8a6060', lane: '#ff3b30', edge: '#ffb02e', ridge: '#150a0a', curb: '#3a2626',
-    roadE: '#0c0606', groundE: '#1a0a08', sun: 0, snow: 0, sparks: 1, stars: 0, groundA: 1,
+    roadE: '#0c0606', groundE: '#1a0a08', sun: 0, snow: 0, sparks: 0.6, stars: 0, groundA: 1, rain: 1,
   },
   { // Cosmic Skyway
     top: '#04021a', mid: '#170d48', low: '#2a1062', glow: '#18c6b8', fog: '#1d0f4a', hemi: '#a090ff', hemiG: '#0a0420',
     key: '#b0f0ff', road: '#b8a8ff', ground: '#40308a', lane: '#2affd5', edge: '#c058ff', ridge: '#120830', curb: '#2a1a66',
-    roadE: '#0c0630', groundE: '#000000', sun: 0, snow: 0, sparks: 0, stars: 1, groundA: 0,
+    roadE: '#0c0630', groundE: '#000000', sun: 0, snow: 0, sparks: 0, stars: 1, groundA: 0, rain: 0,
   },
 ];
 const COLOR_KEYS = ['top', 'mid', 'low', 'glow', 'fog', 'hemi', 'hemiG', 'key', 'road', 'ground', 'lane', 'edge', 'ridge', 'curb', 'roadE', 'groundE'];
-const NUM_KEYS = ['sun', 'snow', 'sparks', 'stars', 'groundA'];
+const NUM_KEYS = ['sun', 'snow', 'sparks', 'stars', 'groundA', 'rain'];
 const toState = (t) => ({
   ...Object.fromEntries(COLOR_KEYS.map((k) => [k, new Color(t[k])])),
   ...Object.fromEntries(NUM_KEYS.map((k) => [k, t[k]])),
@@ -464,6 +468,16 @@ export function createWorld(scene, renderer) {
       st.setXYZ(i, Math.cos(a) * r * 400, u * 400, Math.sin(a) * r * 400);
     }
   }
+  // Rain: slanted streaks (two vertices each) that fall fast and rush towards the camera.
+  const RAIN_N = 900;
+  const RAIN_BOX = { x: 22, y: 14, z: 60 };
+  const rainGeo = new BufferGeometry();
+  rainGeo.setAttribute('position', new BufferAttribute(new Float32Array(RAIN_N * 6), 3));
+  const rain = new LineSegments(rainGeo, new LineBasicMaterial({ color: '#b8c8ff', transparent: true, opacity: 0, depthWrite: false, fog: false }));
+  rain.frustumCulled = false;
+  scene.add(rain);
+  const rainHead = Float32Array.from({ length: RAIN_N * 3 }, (_, i) => (i % 3 === 0 ? rand(-RAIN_BOX.x, RAIN_BOX.x) : i % 3 === 1 ? rand(0, RAIN_BOX.y) : rand(-RAIN_BOX.z, 6)));
+  const flash = { t: 0, next: 3 };
   const sparkVel = Float32Array.from({ length: sparks.geometry.attributes.position.count }, () => rand(2, 7));
 
   // ---------- theme state ----------
@@ -507,6 +521,8 @@ export function createWorld(scene, renderer) {
     sparks.visible = cur.sparks > 0.01;
     stars.material.opacity = cur.stars;
     stars.visible = cur.stars > 0.01;
+    rain.material.opacity = 0.55 * cur.rain;
+    rain.visible = cur.rain > 0.01;
   }
   apply();
 
@@ -565,6 +581,7 @@ export function createWorld(scene, renderer) {
     setQuality(q) {
       quality.n = q === 'low' ? 0.35 : 1;
       for (const p of [snow, sparks, stars]) p.geometry.setDrawRange(0, Math.floor(p.geometry.attributes.position.count * quality.n));
+      rainGeo.setDrawRange(0, Math.floor(RAIN_N * quality.n) * 2);
     },
     update(d, camera, dt) {
       time += dt;
@@ -620,6 +637,43 @@ export function createWorld(scene, renderer) {
         p.needsUpdate = true;
       }
       sparks.userData.d = d;
+      if (rain.visible) {
+        const p = rainGeo.attributes.position.array;
+        const drift = d - (rain.userData.d ?? d);
+        const n = Math.floor(RAIN_N * quality.n);
+        for (let i = 0; i < n; i++) {
+          const j = i * 3;
+          let y = rainHead[j + 1] - dt * 26;
+          let z = rainHead[j + 2] + drift + dt * 4;
+          if (y < 0) y += RAIN_BOX.y;
+          if (z > 6) z -= RAIN_BOX.z + 6;
+          rainHead[j + 1] = y;
+          rainHead[j + 2] = z;
+          const x = rainHead[j] + camera.position.x;
+          p.set([x, y, z, x - 0.12, y + 1.1, z - 0.5], i * 6);
+        }
+        rainGeo.attributes.position.needsUpdate = true;
+        // Lightning: a white-violet flash over the foundry every few seconds.
+        flash.next -= dt;
+        if (flash.next <= 0) {
+          flash.t = 0.35;
+          flash.next = rand(3.5, 8);
+        }
+      }
+      rain.userData.d = d;
+      if (flash.t > 0) {
+        flash.t = Math.max(0, flash.t - dt);
+        const f = (flash.t > 0.22 || (flash.t < 0.15 && flash.t > 0.08) ? 1 : 0.2) * cur.rain;
+        hemi.intensity = 1.8 + f * 2.2;
+        skyMat.uniforms.glow.value.copy(cur.glow).lerp(FLASH_C, f * 0.8);
+      } else if (hemi.intensity !== 1.8) {
+        hemi.intensity = 1.8;
+        skyMat.uniforms.glow.value.copy(cur.glow);
+      }
+    },
+    /** Lightning flashes are off-screen effects too; expose whether one is lit (for audio). */
+    get flashing() {
+      return flash.t > 0.2;
     },
   };
 }

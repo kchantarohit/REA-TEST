@@ -1,47 +1,63 @@
-// Original inline SVG icon set (24x24). Strokes use currentColor unless a glyph
-// needs its own fill (cell / gem currency marks).
+// Original hand-drawn icon set (24x24). One ink-pen voice: rounded 2.3px strokes, paths
+// drawn a touch off-true (no perfect circles or ruler lines) so they read as marker
+// doodles on a parcel label. Strokes use currentColor; the two currencies carry their own
+// fills so they read the same on cream labels and on the dusk HUD.
 const S = (body, extra = '') =>
-  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${body}</svg>`;
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${body}</svg>`;
+const F = (body) => `<svg viewBox="0 0 24 24" aria-hidden="true">${body}</svg>`;
 
 export const ICONS = {
-  cell: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8 20.6 7v10L12 22.2 3.4 17V7z" fill="#ffd23f" stroke="#8a5a00" stroke-width="1.4"/><path d="M13.4 5.5 8.6 13h3.2l-1.2 5.5 4.8-7.5h-3.2z" fill="#7a4300"/></svg>`,
-  gem: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 3.5h11L22 9l-10 12L2 9z" fill="#ff5ad1" stroke="#7a1062" stroke-width="1.4"/><path d="M2 9h20M8.5 3.5 7 9l5 12 5-12-1.5-5.5" fill="none" stroke="#ffd1f5" stroke-width="1.1" opacity=".8"/></svg>`,
-  home: S('<path d="M3.5 11 12 4l8.5 7"/><path d="M6 9.5V20h4.5v-5.5h3V20H18V9.5"/>'),
-  shop: S('<path d="M4 8h16l-1.3 11.2a1.5 1.5 0 0 1-1.5 1.3H6.8a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M8.5 10V6.5a3.5 3.5 0 0 1 7 0V10"/>'),
-  chars: S('<rect x="4.5" y="6" width="15" height="12" rx="6"/><path d="M8 11.5h8"/><path d="M12 6V3"/><circle cx="12" cy="2.6" r=".6" fill="currentColor"/><path d="M8.5 21h7"/>'),
-  missions: S('<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8" fill="currentColor"/>'),
-  gear: S('<circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/><circle cx="12" cy="12" r="6.6"/>'),
-  plus: S('<path d="M12 6v12M6 12h12"/>', 'stroke-width="3"'),
-  pause: S('<path d="M9 6v12M15 6v12"/>', 'stroke-width="3.2"'),
-  play: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.5.9l10.4-6.5a1 1 0 0 0 0-1.8L9.5 4.6A1 1 0 0 0 8 5.5z" fill="currentColor"/></svg>`,
-  close: S('<path d="M6 6l12 12M18 6 6 18"/>', 'stroke-width="2.8"'),
-  left: S('<path d="M15 5 8 12l7 7"/>', 'stroke-width="3"'),
-  right: S('<path d="m9 5 7 7-7 7"/>', 'stroke-width="3"'),
-  lock: S('<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V7.5a3.5 3.5 0 0 1 7 0v3"/>'),
-  check: S('<path d="m5 12.5 4.5 4.5L19 7.5"/>', 'stroke-width="3"'),
-  calendar: S('<rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/><path d="m9.5 14.5 2 2 3.5-3.5"/>'),
-  trophy: S('<path d="M7 4h10v5a5 5 0 0 1-10 0z"/><path d="M7 6H4v1.5A3.5 3.5 0 0 0 7.5 11M17 6h3v1.5a3.5 3.5 0 0 1-3.5 3.5"/><path d="M12 14v3M8.5 20h7l-1-3h-5z"/>'),
-  sound: S('<path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/>'),
-  music: S('<path d="M9 18V5.5l10-2V16"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>'),
-  vibe: S('<rect x="8" y="3.5" width="8" height="17" rx="2"/><path d="M4.5 8v8M19.5 8v8M2 10.5v3M22 10.5v3"/>'),
-  quality: S('<path d="M12 3 3 8l9 5 9-5z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 16.5 9 5 9-5" opacity=".55"/>'),
-  reset: S('<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4 4.5v4h4"/>'),
-  flag: S('<path d="M5 21V4"/><path d="M5 4h12l-2.5 4L17 12H5"/>'),
-  timer: S('<circle cx="12" cy="13.5" r="7.5"/><path d="M12 9.5v4l2.5 2M9.5 3h5M12 3v3"/>'),
-  star: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.8 2.7 5.8 6.3.7-4.7 4.3 1.3 6.2L12 16.7l-5.6 3.1 1.3-6.2L3 9.3l6.3-.7z" fill="currentColor"/></svg>`,
-  // Power-ups and items.
-  magnet: S('<path d="M6 4v8a6 6 0 0 0 12 0V4"/><path d="M6 4h3.5v8a2.5 2.5 0 0 0 5 0V4H18"/><path d="M6 7.5h3.5M14.5 7.5H18"/>'),
-  spring: S('<path d="M7 20h10M7 4h10"/><path d="M8 17.5 16 15l-8-2.5 8-2.5-8-2.5 8-2.5"/>'),
-  shield: S('<path d="M12 3 4.5 6v5.5c0 4.6 3.2 8 7.5 9.5 4.3-1.5 7.5-4.9 7.5-9.5V6z"/><path d="m8.8 12 2.3 2.3 4.2-4.6"/>'),
-  x2: `<svg viewBox="0 0 24 24" aria-hidden="true"><text x="12" y="17" text-anchor="middle" font-size="13" font-weight="900" font-family="system-ui,sans-serif" fill="currentColor">x2</text></svg>`,
-  hyper: S('<path d="m4 5 7 7-7 7"/><path d="m12 5 7 7-7 7"/>', 'stroke-width="2.8"'),
-  headstart: S('<path d="M12 2.8c3.5 2.2 5 5.8 4.5 10.2l-2 2.5h-5l-2-2.5C7 8.6 8.5 5 12 2.8z"/><circle cx="12" cy="9" r="1.8"/><path d="M9.5 15.5 7 20l3.2-1.6M14.5 15.5 17 20l-3.2-1.6"/>'),
-  revive: S('<path d="M12 20s-7.5-4.6-7.5-10.2A4.3 4.3 0 0 1 12 7.2a4.3 4.3 0 0 1 7.5 2.6C19.5 15.4 12 20 12 20z"/><path d="M12 10.5v5M9.5 13h5"/>'),
-  booster: S('<path d="M12 20V5"/><path d="m6.5 10.5 5.5-5.5 5.5 5.5"/><path d="M5 20h14"/>'),
-  mystery: S('<path d="M4 9h16v11H4z"/><path d="M3 6h18v3H3zM12 6v14"/><path d="M12 6c-1.5-3-5-3-5-1s3 1 5 1c2 0 5 1 5-1s-3.5-2-5 1"/>'),
-  swipeH: S('<path d="M3 12h18"/><path d="m7 8-4 4 4 4M17 8l4 4-4 4"/>', 'stroke-width="2.6"'),
-  swipeUp: S('<path d="M12 21V3"/><path d="m7 8 5-5 5 5"/>', 'stroke-width="2.6"'),
-  swipeDown: S('<path d="M12 3v18"/><path d="m7 16 5 5 5-5"/>', 'stroke-width="2.6"'),
+  // Currencies: a Spark (lightning coin) and a Gem.
+  cell: F('<path d="M12 2.2c5.6-.1 9.9 4.1 9.8 9.9-.1 5.5-4.4 9.8-9.9 9.7C6.4 21.7 2.1 17.4 2.3 11.8 2.4 6.4 6.6 2.3 12 2.2z" fill="#ffd84a" stroke="#26122f" stroke-width="1.8"/><path d="M13.4 5.6 8.3 12.9l3.4-.1-1.4 5.6 5.3-7.6-3.5.1z" fill="#26122f"/>'),
+  gem: F('<path d="M7 3.6 17.2 3.4l4.5 5.5L12 20.9 2.4 9.2z" fill="#ff5fc8" stroke="#26122f" stroke-width="1.8" stroke-linejoin="round"/><path d="M2.8 9.1h18.6M8.7 3.7 7.4 9.2 12 20.4l4.5-11.2-1.2-5.6" fill="none" stroke="#26122f" stroke-width="1.1" opacity=".55"/><path d="M6 6.2l1.4-1.6" stroke="#fff1dc" stroke-width="1.4" stroke-linecap="round"/>'),
+  // Navigation.
+  home: S('<path d="M3.4 11.2 12.1 3.9l8.6 7.4"/><path d="M5.9 9.6 6 20.3h4.6v-5.4c0-.9.6-1.3 1.4-1.3s1.4.5 1.4 1.3v5.4h4.6l.1-10.8"/>'),
+  shop: S('<path d="M4.2 9.6 5.1 20c.1.5.5.8 1 .8h11.8c.5 0 .9-.3 1-.8l.8-10.4z"/><path d="M3.2 9.6h17.6l-1.6-4.9H4.9z"/><path d="M9.6 13.4c.4 1.7 1.3 2.4 2.5 2.4s2.1-.8 2.4-2.4"/>'),
+  chars: S('<circle cx="8.6" cy="7.6" r="3.1"/><path d="M2.9 19.6c.4-3.9 2.6-6 5.7-6s5.3 2.1 5.8 6"/><path d="M15.4 4.9c1.6-.4 3.6.6 3.7 2.7.1 2-1.5 3.2-3.1 3.1"/><path d="M16.6 13.6c2.6.3 4.2 2.4 4.5 5.8"/>'),
+  missions: S('<path d="M8.2 4.3H6.1c-.9 0-1.4.6-1.4 1.4l.1 14.1c0 .8.5 1.3 1.3 1.3h11.8c.8 0 1.3-.5 1.3-1.3V5.7c0-.8-.6-1.4-1.4-1.4h-2"/><path d="M8.4 3.1h7.3v3.1H8.4z"/><path d="m8.2 12.4 1.7 1.7 3.1-3.3M8.4 17.4h7.2"/>'),
+  trophy: S('<path d="M7.1 3.8h9.9l-.4 5.6c-.3 2.6-2 4.4-4.5 4.5-2.6-.1-4.4-1.9-4.6-4.5z"/><path d="M7 6H3.9c-.1 2.8 1.2 4.6 3.6 5M17 6h3.1c.1 2.8-1.3 4.6-3.7 5"/><path d="M12 14v3.4M8.3 20.6c.3-1.9 1.6-3.1 3.7-3.1s3.4 1.2 3.7 3.1z"/>'),
+  gear: S('<path d="M12 8.6c1.9 0 3.4 1.5 3.4 3.4s-1.5 3.4-3.4 3.4-3.4-1.5-3.4-3.4S10.1 8.6 12 8.6z"/><path d="M10.6 2.9h2.8l.5 2.5 1.9.9 2.2-1.4 2 2-1.4 2.2.8 1.9 2.6.5v2.8l-2.6.5-.8 1.9 1.4 2.2-2 2-2.2-1.4-1.9.8-.5 2.6h-2.8l-.5-2.6-1.9-.8-2.2 1.4-2-2 1.4-2.2-.8-1.9-2.6-.5v-2.8l2.6-.5.8-1.9-1.4-2.2 2-2 2.2 1.4 1.9-.9z"/>'),
+  pause: S('<path d="M9 5.8v12.6M15.2 5.6 15 18.3"/>', 'stroke-width="3.4"'),
+  play: F('<path d="M7.8 4.9c0-1 1-1.5 1.8-1l10.2 6.6c.8.5.8 1.6 0 2.1L9.7 19.2c-.8.5-1.9 0-1.9-1z" fill="currentColor"/>'),
+  go: S('<path d="M3.6 12.2h14.2"/><path d="M12.6 5.9 19.1 12l-6.4 6.3"/><path d="M3.4 7.6h4.4M4.6 16.7h3.6" stroke-width="2"/>', 'stroke-width="3"'),
+  close: S('<path d="M6.2 6.1 17.9 17.8M17.7 6.3 6.3 17.7"/>', 'stroke-width="2.9"'),
+  left: S('<path d="M15.2 4.8 8.1 12.1l7.2 7.1"/>', 'stroke-width="3"'),
+  right: S('<path d="m8.8 4.9 7.1 7.2-7.2 7"/>', 'stroke-width="3"'),
+  lock: S('<path d="M5.4 11.1h13.3l-.2 9.4H5.5z"/><path d="M8.4 11V7.9c0-2.4 1.5-4 3.6-4s3.6 1.6 3.6 4.1V11"/><path d="M12 14.6v2.4"/>'),
+  check: S('<path d="m4.8 12.6 4.6 4.6 9.8-10"/>', 'stroke-width="3"'),
+  calendar: S('<path d="M4 6.2c0-.8.5-1.3 1.3-1.3h13.5c.8 0 1.2.5 1.2 1.3l-.1 13c0 .8-.5 1.3-1.3 1.3H5.3c-.8 0-1.3-.5-1.3-1.3z"/><path d="M4.2 10.1H19.8M8.1 3v3.6M16 3.1v3.5"/><path d="M12 12.9v5.2M9.5 15.4H14.5" stroke-width="2.6"/>'),
+  word: S('<path d="M4.3 4.6h15.4l-.2 11.6h-8l-4.4 3.9.2-3.9H4.4z"/><path d="m8.9 13.4 3-7.1 3.1 7.1M9.9 11.2h4.2"/>'),
+  sound: S('<path d="M3.9 9.3h3.5l4.7-4.1v13.6l-4.7-4H3.9z"/><path d="M15.6 8.8c1.8 1.7 1.8 4.7 0 6.4M18.2 6.2c3.3 3.2 3.3 8.5 0 11.7"/>'),
+  music: S('<path d="M9 18.1V5.7l10.1-2.1v12.3"/><path d="M6.6 20.6c1.4 0 2.5-1.1 2.5-2.5s-1.1-2.4-2.5-2.4-2.5 1-2.5 2.4 1.1 2.5 2.5 2.5zM16.6 18.4c1.4 0 2.5-1 2.5-2.4s-1.1-2.5-2.5-2.5-2.5 1.1-2.5 2.5 1.1 2.4 2.5 2.4z"/>'),
+  vibe: S('<path d="M8.1 4.6c0-.7.5-1.1 1.2-1.1h5.4c.7 0 1.2.4 1.2 1.1l-.1 14.9c0 .7-.4 1.1-1.1 1.1H9.3c-.7 0-1.2-.4-1.2-1.1z"/><path d="M4.4 8.2 4.6 16M19.6 8.1v7.8M2 10.6v3M22 10.5v3.1"/>'),
+  quality: S('<path d="M12.1 3.2 3.1 8.1l9 4.9 8.8-4.9z"/><path d="m3.2 12.6 8.9 4.9 8.8-4.9"/><path d="m3.3 16.6 8.8 4.8 8.8-4.9" opacity=".55"/>'),
+  reset: S('<path d="M4.6 12.1c.1 4.2 3.4 7.5 7.5 7.4 4.1-.1 7.4-3.4 7.3-7.5-.1-4.1-3.4-7.4-7.5-7.3-2.1.1-4 .9-5.3 2.4"/><path d="M4.2 4.4 4.3 8.6h4.2"/>'),
+  flag: S('<path d="M5.2 21.1 5 3.9"/><path d="M5.1 4.1c2.4-1 4.4-.9 6.7.3 2.3 1.1 4.3 1.1 6.9-.1l-.1 8.1c-2.6 1.2-4.6 1.2-6.9.1-2.3-1.2-4.3-1.3-6.6-.3"/>'),
+  timer: S('<path d="M12 21c4.2 0 7.5-3.3 7.5-7.5S16.2 6 12 6s-7.5 3.4-7.5 7.5S7.8 21 12 21z"/><path d="M12 9.6v4.2l2.6 1.9M9.4 2.9h5.2M12 3v3"/>'),
+  star: F('<path d="m12 2.6 2.9 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17l-5.8 3.1 1.2-6.4-4.7-4.4 6.4-.8z" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>'),
+  // Power-ups and supplies.
+  magnet: S('<path d="M5.9 3.9 6 12.3c.1 3.4 2.6 5.9 6 5.9s5.9-2.5 6-5.9l-.1-8.4"/><path d="M5.9 4h3.6l.1 8.2c0 1.5 1 2.5 2.4 2.5s2.4-1 2.4-2.5l.1-8.3h3.5"/><path d="M6 7.7h3.5M14.5 7.6h3.4"/>'),
+  spring: S('<path d="M6.8 20.4h10.6M6.6 3.7l10.7.1"/><path d="M8.1 17.6c5.3-.6 7.9-1.6 7.8-2.6-.1-1-2.7-1.6-7.8-2.4 5.2-.7 7.8-1.4 7.8-2.5S13.3 8.3 8.2 7.6c4.9-.6 7.5-1.5 7.7-2.5"/>'),
+  shield: S('<path d="M12.1 3.1C9.8 4.9 7.2 5.8 4.6 6l.1 5.6c.1 4.4 3 7.9 7.3 9.4 4.4-1.6 7.2-5 7.3-9.4l.1-5.6c-2.6-.1-5.1-1-7.3-2.9z"/><path d="m8.9 12 2.2 2.3 4-4.5"/>'),
+  x2: S('<path d="m3.4 8.6 6.2 7M9.5 8.5l-6 7.2"/><path d="M13.4 10.2c.4-1.5 1.7-2.2 3.1-2.1 1.6.1 2.6 1.1 2.6 2.4 0 2.4-3.9 3.6-5.9 5.4h6.3"/>', 'stroke-width="2.6"'),
+  hyper: S('<path d="M3.9 5.1 10.8 12l-7 6.9"/><path d="m12.2 5 7 7.1-7.1 6.9"/>', 'stroke-width="2.9"'),
+  headstart: S('<path d="M12.1 2.8c3.4 2.4 4.9 5.8 4.4 10.3l-2 2.4H9.4l-2-2.4C6.9 8.6 8.5 5.1 12.1 2.8z"/><path d="M12 10.8c1 0 1.8-.8 1.8-1.8S13 7.1 12 7.1s-1.8.9-1.8 1.9.8 1.8 1.8 1.8z"/><path d="M9.6 15.6 7.2 20.2l3.1-1.7M14.4 15.5l2.5 4.6-3.2-1.6"/>'),
+  revive: S('<path d="M12 20.1s-7.6-4.5-7.6-10.2c0-2.5 1.9-4.4 4.2-4.4 1.5 0 2.7.8 3.4 2 .7-1.2 1.9-2 3.4-2 2.3 0 4.2 1.9 4.2 4.4 0 5.7-7.6 10.2-7.6 10.2z"/><path d="M12 10.3v5.1M9.4 12.9h5.2"/>'),
+  booster: S('<path d="M12 20.3V5.4"/><path d="m6.4 10.7 5.6-5.6 5.6 5.7"/><path d="M5.1 20.2h13.8"/>'),
+  mystery: S('<path d="M3.9 8.9h16.2l-.2 11.2H4.1z"/><path d="M3 5.9h18v3H3zM12 5.9v14.2"/><path d="M12 5.8C10.4 2.9 7 2.8 7 4.7c0 1.9 3 1.2 5 1.1 2-.1 5 .8 5-1.1 0-1.9-3.4-1.8-5 1.1"/>'),
+  scooter: S('<path d="M6.4 19.6c1.3 0 2.3-1 2.3-2.3S7.7 15 6.4 15s-2.3 1-2.3 2.3 1 2.3 2.3 2.3zM18.2 19.6c1.3 0 2.3-1 2.3-2.3S19.5 15 18.2 15s-2.3 1-2.3 2.3 1 2.3 2.3 2.3z"/><path d="M8.8 17.3h7.1M17.6 15 15.3 4.3M13.1 4.2h4.5"/>'),
+  // Tutorial gestures.
+  swipeH: S('<path d="M3.1 12.1h17.8"/><path d="m7.1 8.1-4 4 4 4M16.9 8l4 4.1-4 4"/>', 'stroke-width="2.6"'),
+  swipeUp: S('<path d="M12 21V3.1"/><path d="m7 8.1 5-5 5 5"/>', 'stroke-width="2.6"'),
+  swipeDown: S('<path d="M12 3v17.9"/><path d="m7 16 5 5 5-5.1"/>', 'stroke-width="2.6"'),
+  // Run moments.
+  combo: S('<path d="M12.4 21c3.9-.2 6.5-2.8 6.4-6.6-.1-3.3-2.2-5-3.5-7.5-.6 1.8-1.4 2.7-2.7 3.4C13 6.6 11.6 4 9.4 2.9c.3 3.4-1.6 5.3-3 7.3-1 1.4-1.4 2.9-1.3 4.5.2 3.6 3.1 6.4 7.3 6.3z"/><path d="M12.3 20.9c-1.9 0-3-1.3-3-3 0-1.8 1.5-2.6 2.2-4.2.9 1.1 3.5 2 3.5 4.3 0 1.7-1.1 2.9-2.7 2.9z"/>'),
+  shirt: S('<path d="M8.8 3.8 3.4 6.6l1.9 4.4 2.3-1 .1 10.3h8.7l.1-10.3 2.3 1 1.9-4.4-5.4-2.8c-.4 1.5-1.8 2.6-3.3 2.6s-2.8-1.1-3.2-2.6z"/>'),
+  siren: S('<path d="M6.3 17.8 6.6 12c.2-3.2 2.4-5.3 5.4-5.3s5.2 2.1 5.4 5.3l.3 5.8"/><path d="M4.4 20.4h15.2l-.3-2.6H4.7zM12 2.8v1.8M4.4 6.1l1.3 1.2M19.6 6.1l-1.3 1.2"/><path d="M10 11.6c.4-1 1.1-1.5 2-1.5"/>'),
+  road: S('<path d="M8.6 3.1 4.2 20.9M15.4 3.1l4.4 17.8"/><path d="M12 4v2.6M12 10v3M12 16.6v3.6"/>'),
+  jump: S('<path d="M3.2 19.8h17.6"/><path d="M5.1 15.6c2.6-7.6 11.3-7.7 13.9-.1"/><path d="m16.3 13.4 2.8 2.2.8-3.4"/>'),
+  roll: S('<path d="M12 18.9c3.8 0 6.8-3 6.8-6.8S15.8 5.2 12 5.2 5.2 8.3 5.2 12.1"/><path d="m3.3 10.3 1.9 2.1 2.3-1.8"/><path d="M3.1 21h17.8"/>'),
+  escape: S('<path d="M4 19.6c3.3-.5 5.6-2.3 7-5.3 1.4-3 3.7-4.6 7.1-4.9"/><path d="m15.6 6.6 3.3 2.6-2.6 3.4"/><path d="M4.2 7.7h3.6M3.4 11.2h2.8"/>'),
 };
 
 /** @param {keyof typeof ICONS} name */

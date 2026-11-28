@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "world": "night-shift dispatch board (Volt Dash v3)",
+  "colors": {
+    "night": "#140a22", "dusk": "#22113a", "plum": "#321a4b", "plum2": "#43235f", "plum3": "#57307a",
+    "cream": "#fff1dc", "paperLine": "#ead2b0", "ink": "#26122f", "ink2": "#5b3c63", "ink3": "#8a6a86",
+    "text": "#fff6ea", "text2": "#dcc8e8", "text3": "#b59fc6",
+    "pink": "#ff4f7b", "pinkDeep": "#b8274f", "cyan": "#3ee6f0", "amber": "#ffc46b", "green": "#5be3a1", "red": "#ff5a5f",
+    "spark": "#ffd84a", "gem": "#ff5fc8"
+  },
+  "type": { "family": "Bricolage Grotesque (OFL, bundled)", "display": { "weight": 800, "stretch": "75%" }, "ui": { "weight": "600-700", "stretch": "92%" } },
+  "radius": { "lg": 18, "md": 14, "sm": 10 },
+  "shadow": { "1": "0 4px 10px -2px rgba(8,2,16,.55)", "2": "0 10px 24px -6px rgba(8,2,16,.7)" },
+  "ease": "cubic-bezier(.16,1,.3,1)"
+}

@@ -1,8 +1,8 @@
 {
   "name": "volt-dash",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
-  "description": "Volt Dash: an original 3-lane endless runner packaged as an offline Android WebView APK.",
+  "description": "Volt Dash: an original 3-lane endless runner with a human courier crew packaged as an offline Android WebView APK.",
   "type": "module",
   "license": "MIT",
   "scripts": {

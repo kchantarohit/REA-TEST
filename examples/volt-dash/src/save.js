@@ -1,11 +1,15 @@
 // One versioned save object in localStorage. Everything read back is validated, so a
 // corrupt or hand-edited save degrades to defaults instead of breaking the game.
-// v1 kept separate keys (voltdash.best / voltdash.cells / voltdash.muted); they are
-// migrated once and left in place.
-import { CHARACTERS, ITEMS, MAX_CHAR_LEVEL, MAX_TIER, MAX_UPGRADE, UPGRADES } from './catalog.js';
+// v1 kept separate keys (voltdash.best / voltdash.cells / voltdash.muted); v2 kept one
+// object under voltdash.save.v2 with robot character ids. Both migrate once into v3 and
+// are left in place (an older APK reinstalled still finds its own save).
+import {
+  ACHIEVEMENTS, CHARACTERS, CHAR_MAP, ITEMS, MAX_CHAR_LEVEL, MAX_TIER, MAX_UPGRADE, OUTFIT_PRICE, STARTER, STAT_KEYS, UPGRADES,
+} from './catalog.js';
 
-export const SAVE_KEY = 'voltdash.save.v2';
-export const SAVE_VERSION = 2;
+export const SAVE_KEY = 'voltdash.save.v3';
+export const V2_KEY = 'voltdash.save.v2';
+export const SAVE_VERSION = 3;
 const V1 = { best: 'voltdash.best', cells: 'voltdash.cells', muted: 'voltdash.muted' };
 
 /** @typedef {ReturnType<typeof defaults>} Save */
@@ -13,7 +17,7 @@ export function defaults() {
   return {
     v: SAVE_VERSION,
     best: 0,
-    cells: 0,
+    cells: 0, // shown as "Sparks"; the key stays for save compatibility
     gems: 0,
     level: 1,
     xp: 0,
@@ -21,11 +25,18 @@ export function defaults() {
     upgrades: Object.fromEntries(Object.keys(UPGRADES).map((k) => [k, 1])),
     items: Object.fromEntries(Object.keys(ITEMS).map((k) => [k, 0])),
     /** character id -> level (owned when present) */
-    chars: { volt: 1 },
-    selected: 'volt',
-    loadout: { headstart: true, revive: true, booster: true },
+    chars: { [STARTER]: 1 },
+    selected: STARTER,
+    /** character id -> {own: owned outfit indices, sel: worn index} */
+    outfits: Object.fromEntries(CHARACTERS.map((c) => [c.id, { own: [0], sel: 0 }])),
+    loadout: { headstart: true, revive: true, booster: true, scooter: true },
     missions: { tier: 1, progress: [0, 0, 0], claimed: [false, false, false] },
     daily: { last: '', streak: 0 },
+    /** Daily word hunt: letters found today, and whether today's reward was claimed. */
+    word: { day: '', got: [false, false, false, false, false], claimed: false },
+    stats: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),
+    /** unlocked achievement ids */
+    ach: /** @type {string[]} */ ([]),
     tutorialDone: false,
     runs: 0,
   };
@@ -35,14 +46,17 @@ const int = (v, min, max, d) => (typeof v === 'number' && Number.isFinite(v) ? M
 const bool = (v, d) => (typeof v === 'boolean' ? v : d);
 const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
 const BIG = 1e9;
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** v2 robot ids become courier ids; v3 ids pass through. */
+const mapId = (id) => (typeof id === 'string' ? CHAR_MAP[id] || id : '');
 
-/** Coerce anything into a valid Save. */
+/** Coerce anything (a v2 or v3 object) into a valid v3 Save. */
 export function sanitize(raw) {
   const r = obj(raw);
   const d = defaults();
   const st = obj(r.settings);
   const s = {
-    v: SAVE_VERSION,
+    ...d,
     best: int(r.best, 0, BIG, 0),
     cells: int(r.cells, 0, BIG, 0),
     gems: int(r.gems, 0, BIG, 0),
@@ -54,13 +68,6 @@ export function sanitize(raw) {
       vibe: bool(st.vibe, true),
       quality: st.quality === 'low' ? 'low' : 'high',
     },
-    upgrades: { ...d.upgrades },
-    items: { ...d.items },
-    chars: {},
-    selected: 'volt',
-    loadout: { ...d.loadout },
-    missions: { ...d.missions },
-    daily: { ...d.daily },
     tutorialDone: bool(r.tutorialDone, false),
     runs: int(r.runs, 0, BIG, 0),
   };
@@ -68,28 +75,54 @@ export function sanitize(raw) {
   for (const k in s.upgrades) s.upgrades[k] = int(up[k], 1, MAX_UPGRADE, 1);
   const it = obj(r.items);
   for (const k in s.items) s.items[k] = int(it[k], 0, 999, 0);
+
   const ch = obj(r.chars);
-  for (const c of CHARACTERS) {
-    const l = int(ch[c.id], 0, MAX_CHAR_LEVEL, 0);
-    if (l > 0) s.chars[c.id] = l;
+  s.chars = {};
+  for (const [k, v] of Object.entries(ch)) {
+    const id = mapId(k);
+    if (!CHARACTERS.some((c) => c.id === id)) continue;
+    const l = int(v, 0, MAX_CHAR_LEVEL, 0);
+    if (l > 0) s.chars[id] = Math.max(s.chars[id] || 0, l);
   }
-  s.chars.volt = s.chars.volt || 1; // the starter can never be lost
-  s.selected = typeof r.selected === 'string' && s.chars[r.selected] ? r.selected : 'volt';
+  s.chars[STARTER] = s.chars[STARTER] || 1; // the starter can never be lost
+  const sel = mapId(r.selected);
+  s.selected = s.chars[sel] ? sel : STARTER;
+
+  const of = obj(r.outfits);
+  for (const c of CHARACTERS) {
+    const o = obj(of[c.id]);
+    const own = Array.isArray(o.own) ? [...new Set(o.own.filter((i) => Number.isInteger(i) && i >= 0 && i < OUTFIT_PRICE.length))] : [];
+    if (!own.includes(0)) own.unshift(0);
+    own.sort((a, b) => a - b);
+    const worn = Number.isInteger(o.sel) ? o.sel : 0;
+    s.outfits[c.id] = { own, sel: own.includes(worn) ? worn : 0 };
+  }
+
   const lo = obj(r.loadout);
   for (const k in s.loadout) s.loadout[k] = bool(lo[k], true);
   const m = obj(r.missions);
-  const arr = (a, f) => [0, 1, 2].map((i) => f(Array.isArray(a) ? a[i] : undefined));
+  const arr = (a, n, f) => Array.from({ length: n }, (_, i) => f(Array.isArray(a) ? a[i] : undefined));
   s.missions = {
     tier: int(m.tier, 1, MAX_TIER, 1),
-    progress: arr(m.progress, (v) => int(v, 0, BIG, 0)),
-    claimed: arr(m.claimed, (v) => bool(v, false)),
+    progress: arr(m.progress, 3, (v) => int(v, 0, BIG, 0)),
+    claimed: arr(m.claimed, 3, (v) => bool(v, false)),
   };
   const dl = obj(r.daily);
-  s.daily = { last: typeof dl.last === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dl.last) ? dl.last : '', streak: int(dl.streak, 0, 7, 0) };
+  s.daily = { last: typeof dl.last === 'string' && DAY.test(dl.last) ? dl.last : '', streak: int(dl.streak, 0, 7, 0) };
+  const w = obj(r.word);
+  s.word = {
+    day: typeof w.day === 'string' && DAY.test(w.day) ? w.day : '',
+    got: arr(w.got, 5, (v) => bool(v, false)),
+    claimed: bool(w.claimed, false),
+  };
+  const sx = obj(r.stats);
+  for (const k of STAT_KEYS) s.stats[k] = int(sx[k], 0, BIG, 0);
+  s.stats.runs = Math.max(s.stats.runs, s.runs); // v2 saves only had the run counter
+  s.ach = Array.isArray(r.ach) ? [...new Set(r.ach.filter((id) => ACHIEVEMENTS.some((a) => a.id === id)))] : [];
   return s;
 }
 
-/** Build a v2 save from v1's separate keys, or null when there is no v1 data. */
+/** Build a v3 save from v1's separate keys, or null when there is no v1 data. */
 export function migrateV1(getItem) {
   const read = (k) => {
     try {
@@ -113,7 +146,7 @@ export function migrateV1(getItem) {
 
 /**
  * @param {Pick<Storage, 'getItem'|'setItem'>|null} storage
- * @returns {{data: Save, migrated: boolean, persist: () => boolean, reset: () => void}}
+ * @returns {{data: Save, migrated: ''|'v1'|'v2', persist: () => boolean, reset: () => void}}
  */
 export function openSave(storage) {
   const get = (k) => {
@@ -123,22 +156,35 @@ export function openSave(storage) {
       return null;
     }
   };
-  let data;
-  let migrated = false;
-  const raw = get(SAVE_KEY);
-  if (raw != null) {
+  const parse = (raw) => {
     try {
-      data = sanitize(JSON.parse(raw));
+      return sanitize(JSON.parse(raw));
     } catch {
-      data = defaults(); // corrupt JSON: start fresh rather than crash
+      return null; // corrupt JSON: fall through rather than crash
     }
-  } else {
-    const v1 = migrateV1(get);
-    data = v1 || defaults();
-    migrated = !!v1;
+  };
+  /** @type {Save|null} */
+  let data = null;
+  /** @type {''|'v1'|'v2'} */
+  let migrated = '';
+  const raw3 = get(SAVE_KEY);
+  if (raw3 != null) data = parse(raw3) || defaults();
+  else {
+    const raw2 = get(V2_KEY);
+    const v2 = raw2 != null ? parse(raw2) : null;
+    if (v2) {
+      data = v2;
+      migrated = 'v2';
+    } else {
+      const v1 = migrateV1(get);
+      if (v1) {
+        data = v1;
+        migrated = 'v1';
+      }
+    }
   }
   const api = {
-    data,
+    data: data || defaults(),
     migrated,
     persist() {
       try {

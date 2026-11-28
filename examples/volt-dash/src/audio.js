@@ -2,7 +2,7 @@
 // Music is an original procedural step-sequencer loop (bass + arpeggio + light drums)
 // with one progression/tempo/timbre per stage theme; menus play a calmer version.
 
-/** @typedef {'cell'|'gem'|'jump'|'roll'|'power'|'hyper'|'bump'|'shield'|'crash'|'start'|'click'|'buy'|'error'|'claim'|'levelup'|'open'|'stage'|'tick'|'toggle'} SoundName */
+/** @typedef {'cell'|'gem'|'jump'|'roll'|'power'|'hyper'|'bump'|'shield'|'crash'|'start'|'click'|'buy'|'error'|'claim'|'levelup'|'open'|'stage'|'tick'|'toggle'|'rumble'|'caught'|'combo'|'letter'|'word'|'scooter'|'scooterBreak'|'trophy'|'escape'} SoundName */
 
 const SONGS = [
   // [tempo, lead wave, chords (MIDI), bass octave shift, lead octave shift]
@@ -164,6 +164,37 @@ export function createAudio({ sound = true, music = true } = {}) {
       noise(0.25, 0.3, 400, 4000, sfx, null, 'bandpass');
       [784, 1047, 1568].forEach((f, i) => blip('sine', f, f, 0.2, 0.2, 0.15 + i * 0.06));
     },
+    // Clank: low diesel rumble + brush hiss (played in pulses while he is close).
+    rumble: () => {
+      blip('sawtooth', 55, 42, 0.7, 0.32);
+      blip('square', 38, 30, 0.7, 0.12);
+      noise(0.7, 0.18, 500, 160);
+    },
+    caught: () => {
+      noise(0.6, 0.6, 1800, 90);
+      blip('sawtooth', 120, 30, 0.8, 0.35);
+      [330, 247, 196].forEach((f, i) => blip('square', f, f * 0.96, 0.18, 0.1, 0.25 + i * 0.12));
+    },
+    escape: () => [392, 523].forEach((f, i) => blip('triangle', f, f * 1.01, 0.12, 0.18, i * 0.08)),
+    combo: (tier = 1) => {
+      const base = 523 * 2 ** ((Math.min(tier, 6) * 2) / 12);
+      [1, 1.25, 1.5, 2].forEach((m, i) => blip('triangle', base * m, base * m, 0.11, 0.2, i * 0.05));
+    },
+    letter: () => {
+      blip('sine', 880, 1320, 0.12, 0.28);
+      blip('triangle', 1760, 1760, 0.18, 0.15, 0.08);
+    },
+    word: () => [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => blip('triangle', f, f, 0.16, 0.2, i * 0.07)),
+    scooter: () => {
+      blip('square', 300, 520, 0.1, 0.1);
+      blip('sine', 2100, 2100, 0.08, 0.12, 0.12); // the bell
+      blip('sine', 2100, 2100, 0.08, 0.1, 0.24);
+    },
+    scooterBreak: () => {
+      noise(0.35, 0.45, 4000, 400, sfx, null, 'bandpass');
+      blip('square', 600, 140, 0.3, 0.12);
+    },
+    trophy: () => [784, 988, 1175, 1568].forEach((f, i) => blip('sine', f, f, 0.22, 0.2, i * 0.09)),
     stage: () => {
       noise(0.6, 0.2, 300, 5000, sfx, null, 'bandpass');
       [392, 494, 587, 784].forEach((f) => blip('triangle', f, f, 0.6, 0.12, 0.2));

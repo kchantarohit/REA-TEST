@@ -1,8 +1,9 @@
 // Spawns rows from the pattern generator and owns the pooled meshes for obstacles,
-// volt cells (one InstancedMesh), gems and power-up tokens. Positions live in track space
+// Sparks (one InstancedMesh), gems, power-up tokens and daily-word letter tokens. Positions live in track space
 // (s = distance along the road); render z = -(s - d), with the hero fixed at z = 0.
 import {
   AdditiveBlending,
+  DoubleSide,
   BoxGeometry,
   ConeGeometry,
   DodecahedronGeometry,
@@ -46,7 +47,7 @@ import {
   sliderProgress,
   sliderX,
 } from './track.js';
-import { gapTexture, panelTexture, stripeTexture } from './textures.js';
+import { gapTexture, letterTexture, panelTexture, stripeTexture } from './textures.js';
 
 const SPAWN_AHEAD = 165;
 const KEEP_BEHIND = 12;
@@ -58,6 +59,7 @@ export const POWER_COLORS = { magnet: '#ff3d6e', spring: '#4dff88', shield: '#4d
  * @typedef {{s: number, x: number, y: number, pulled: boolean, px: number, py: number, pz: number}} LiveCell
  * @typedef {import('./track.js').PowerSpec & {mesh: Group}} LivePower
  * @typedef {import('./track.js').CellSpec & {mesh: Group}} LiveGem
+ * @typedef {import('./track.js').CellSpec & {mesh: Group, ch: string}} LiveLetter
  */
 
 function rampGeometry() {
@@ -277,7 +279,20 @@ export function createEntities(scene) {
     return g;
   }
 
-  const pools = { barrier: [], gate: [], pod: [], roller: [], slider: [], laser: [], gap: [], magnet: [], spring: [], shield: [], x2: [], hyper: [], gem: [] };
+  const letterTex = {};
+  const letterRim = new MeshLambertMaterial({ color: '#ff4f7b', emissive: '#5a0f2a' });
+  function buildLetter() {
+    const g = new Group();
+    const face = new Mesh(new PlaneGeometry(0.9, 0.9), new MeshBasicMaterial({ transparent: true, side: DoubleSide, depthWrite: false }));
+    g.add(face);
+    const rim = new Mesh(new TorusGeometry(0.44, 0.05, 6, 24), letterRim);
+    g.add(rim);
+    g.userData.face = face;
+    scene.add(g);
+    return g;
+  }
+
+  const pools = { barrier: [], gate: [], pod: [], roller: [], slider: [], laser: [], gap: [], magnet: [], spring: [], shield: [], x2: [], hyper: [], gem: [], letter: [] };
   /** @type {LiveObstacle[]} */
   const obstacles = [];
   /** @type {LiveCell[]} */
@@ -286,11 +301,15 @@ export function createEntities(scene) {
   const powers = [];
   /** @type {LiveGem[]} */
   const gems = [];
+  /** @type {LiveLetter[]} */
+  const letters = [];
+  /** Returns the letter the player still needs, or null; set by main.js. */
+  let letterFor = () => null;
   let gen = null;
   let nextS = START_S;
 
   function acquire(key) {
-    const m = pools[key].pop() || (key === 'gem' ? buildGem() : key in POWER_COLORS ? buildPower(key) : build(key));
+    const m = pools[key].pop() || (key === 'gem' ? buildGem() : key === 'letter' ? buildLetter() : key in POWER_COLORS ? buildPower(key) : build(key));
     m.visible = true;
     return m;
   }
@@ -314,12 +333,22 @@ export function createEntities(scene) {
     }
     if (row.power) powers.push({ ...row.power, mesh: acquire(row.power.kind) });
     if (row.gem) gems.push({ ...row.gem, mesh: acquire('gem') });
+    const ch = row.letter && !letters.length ? letterFor() : null;
+    if (ch) {
+      const mesh = acquire('letter');
+      const face = mesh.userData.face;
+      face.material.map = letterTex[ch] || (letterTex[ch] = letterTexture(ch));
+      face.material.needsUpdate = true;
+      letters.push({ ...row.letter, ch, mesh });
+    }
   }
 
   function clear() {
     for (const ob of obstacles) release(ob.kind, ob.mesh);
     for (const p of powers) release(p.kind, p.mesh);
     for (const g of gems) release('gem', g.mesh);
+    for (const l of letters) release('letter', l.mesh);
+    letters.length = 0;
     obstacles.length = 0;
     powers.length = 0;
     gems.length = 0;
@@ -337,6 +366,10 @@ export function createEntities(scene) {
     gems[i] = gems[gems.length - 1];
     gems.pop();
   }
+  function removeLetter(i) {
+    release('letter', letters[i].mesh);
+    letters.splice(i, 1);
+  }
   function removePower(i) {
     release(powers[i].kind, powers[i].mesh);
     powers[i] = powers[powers.length - 1];
@@ -350,7 +383,12 @@ export function createEntities(scene) {
     cells,
     powers,
     gems,
+    letters,
     clear,
+    /** @param {() => string|null} fn */
+    setLetterSource(fn) {
+      letterFor = fn;
+    },
     /** Start a fresh run with a seeded generator; the first row sits `lead` metres after d0. */
     reset(seed, d0 = 0, lead = START_S) {
       clear();
@@ -392,8 +430,12 @@ export function createEntities(scene) {
       for (let i = gems.length - 1; i >= 0; i--) {
         if (gems[i].s < d - 4) removeGem(i);
       }
+      for (let i = letters.length - 1; i >= 0; i--) {
+        if (letters[i].s < d - 4) removeLetter(i);
+      }
     },
     removeCell,
+    removeLetter,
     removeGem,
     removePower,
     /** Place meshes for the current track position. */
@@ -450,6 +492,11 @@ export function createEntities(scene) {
       for (const g of gems) {
         g.mesh.position.set(laneX(g.lane), g.y + Math.sin(time * 3 + 1) * 0.15, -(g.s - d));
         g.mesh.rotation.y = time * 2.6;
+      }
+      for (const l of letters) {
+        l.mesh.position.set(laneX(l.lane), l.y + Math.sin(time * 2.5) * 0.12, -(l.s - d));
+        l.mesh.rotation.y = Math.sin(time * 2) * 0.5; // wobbles but stays readable
+        l.mesh.scale.setScalar(1 + 0.06 * Math.sin(time * 6));
       }
     },
   };

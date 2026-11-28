@@ -155,3 +155,39 @@ export const dotTexture = () =>
     g.fillStyle = grad;
     g.fillRect(0, 0, w, w);
   });
+
+/** Stencilled municipal lettering for Clank's plates (cream paint on a dark plate). */
+export const stencilTexture = (text) =>
+  make(256, 96, (g, w, h) => {
+    g.fillStyle = '#2a1a1c';
+    g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#6a4030';
+    g.lineWidth = 6;
+    g.strokeRect(3, 3, w - 6, h - 6);
+    g.fillStyle = '#f2dfb8';
+    g.font = '900 58px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, w / 2, h / 2 + 3);
+    g.fillStyle = '#2a1a1c'; // stencil bridges
+    for (let x = 30; x < w; x += 42) g.fillRect(x, 0, 3, h);
+  });
+
+/** Daily-word letter token: a cream sticker disc with an ink letter and a pink rim. */
+export const letterTexture = (ch) =>
+  make(128, 128, (g, w) => {
+    const r = w / 2;
+    g.fillStyle = '#ff4f7b';
+    g.beginPath();
+    g.arc(r, r, r - 2, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#fff1dc';
+    g.beginPath();
+    g.arc(r, r, r - 12, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#26122f';
+    g.font = '900 80px system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(ch, r, r + 5);
+  });

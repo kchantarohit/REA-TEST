@@ -5,12 +5,15 @@
 //    each stage introduces its obstacle and earlier stages never contain later ones;
 //  - moving-obstacle timing: lasers hold one state through the whole pass, sliders finish
 //    drifting with time to react, rollers meet the hero exactly at their row, gaps are jumpable;
-//  - economy: costs/durations escalate, save validation and v1 -> v2 migration.
+//  - economy: costs/durations escalate, save validation and v1 -> v3 / v2 -> v3 migration;
+//  - v3: daily-word letter tokens never sit inside obstacles, Clank's chase state machine
+//    (stumble -> close -> caught, timeout fall-back), combo math, outfits, word, achievements.
 import assert from 'node:assert/strict';
 import * as T from '../src/track.js';
 import * as C from '../src/catalog.js';
 import * as M from '../src/meta.js';
-import { SAVE_KEY, defaults, migrateV1, openSave, sanitize } from '../src/save.js';
+import { SAVE_KEY, V2_KEY, defaults, migrateV1, openSave, sanitize } from '../src/save.js';
+import { CHASE, createChase } from '../src/chase.js';
 
 const SEEDS = 300;
 const R = 0.35; // pickup radius used for overlap checks
@@ -22,6 +25,9 @@ let rows = 0;
 let walls = 0;
 let maxBlocked = 0;
 let laserChecks = 0;
+let letters = 0;
+let lastLetter = -Infinity;
+let minLetterGap = Infinity;
 
 for (let seed = 1; seed <= SEEDS; seed++) {
   const gen = T.createGenerator(seed);
@@ -84,7 +90,16 @@ for (let seed = 1; seed <= SEEDS; seed++) {
     }
 
     // Pickups never inside anything at meet time (sliders: both lanes; lasers/rollers: whole lane interval).
-    const pickups = [...row.cells, ...(row.power ? [row.power] : []), ...(row.gem ? [row.gem] : [])];
+    if (row.letter) {
+      letters++;
+      minLetterGap = Math.min(minLetterGap, row.letter.s - lastLetter);
+      lastLetter = row.letter.s;
+      // A letter owns its lane in its row: no obstacle, no Spark line, no gem or power-up there.
+      assert.ok(!row.obstacles.some((o) => o.lane === row.letter.lane || T.meetLane(o) === row.letter.lane), `${where}: letter shares a lane with an obstacle`);
+      assert.ok(!row.cells.some((c) => c.lane === row.letter.lane), `${where}: letter on a Spark line`);
+      assert.ok(row.gem?.lane !== row.letter.lane && row.power?.lane !== row.letter.lane, `${where}: letter on another pickup`);
+    }
+    const pickups = [...row.cells, ...(row.power ? [row.power] : []), ...(row.gem ? [row.gem] : []), ...(row.letter ? [row.letter] : [])];
     for (const c of pickups) {
       for (const o of row.obstacles) {
         const lanes = o.kind === 'slider' ? [o.lane, o.to] : [o.lane];
@@ -99,6 +114,7 @@ for (let seed = 1; seed <= SEEDS; seed++) {
       }
     }
     prevEnd = row.end;
+    if (i === 0) lastLetter = -Infinity;
     s = row.nextS;
     i++;
   }
@@ -170,8 +186,8 @@ const junk = sanitize({ best: -5, cells: 'x', gems: 1e99, upgrades: { magnet: 99
 assert.equal(junk.best, 0);
 assert.equal(junk.cells, 0);
 assert.equal(junk.upgrades.magnet, C.MAX_UPGRADE);
-assert.deepEqual(junk.chars, { bit: 3, volt: 1 });
-assert.equal(junk.selected, 'volt');
+assert.deepEqual(junk.chars, { mina: 3, rio: 1 }, 'v2 robot ids map to couriers, unknown ids drop');
+assert.equal(junk.selected, 'rio');
 assert.equal(junk.daily.last, '');
 const mem = (init) => {
   const m = new Map(Object.entries(init));
@@ -183,8 +199,9 @@ assert.ok(opened.migrated);
 assert.equal(opened.data.best, 1234);
 assert.equal(opened.data.cells, 567);
 assert.equal(opened.data.settings.sound, false);
-assert.ok(v1.m.has(SAVE_KEY), 'migration must persist the v2 save');
-assert.equal(openSave(v1).migrated, false, 'migration runs only once');
+assert.equal(opened.migrated, 'v1');
+assert.ok(v1.m.has(SAVE_KEY), 'migration must persist the v3 save');
+assert.equal(openSave(v1).migrated, '', 'migration runs only once');
 assert.equal(migrateV1(() => null), null);
 assert.equal(openSave(mem({ [SAVE_KEY]: '{not json' })).data.best, 0);
 assert.equal(openSave(null).data.level, 1);
@@ -197,10 +214,11 @@ assert.equal(openSave(null).data.level, 1);
   assert.ok(M.buyUpgrade(S, 'magnet').ok);
   assert.equal(S.cells, 10000 - C.upgradeCost(1));
   assert.equal(S.upgrades.magnet, 2);
-  assert.equal(M.unlockChar(S, 'nimbus').reason, 'level');
-  assert.ok(M.unlockChar(S, 'bit').ok && S.selected === 'bit');
-  assert.ok(M.upgradeChar(S, 'bit').ok && S.chars.bit === 2);
-  assert.ok(M.powerDuration(S, 'magnet') > C.UPGRADES.magnet.dur[1], 'Bit perk stretches magnet');
+  assert.equal(M.unlockChar(S, 'noor').reason, 'level');
+  assert.ok(M.unlockChar(S, 'mina').ok && S.selected === 'mina');
+  assert.ok(M.upgradeChar(S, 'mina').ok && S.chars.mina === 2);
+  assert.ok(M.powerDuration(S, 'magnet') > C.UPGRADES.magnet.dur[1], 'Mina perk stretches magnet');
+  assert.equal(M.powerDuration(S, 'shield'), C.UPGRADES.shield.dur[0], 'perk only stretches its own power');
   S.gems = 3;
   assert.ok(M.buyItem(S, 'revive').ok && S.gems === 0 && S.items.revive === 1);
   S.items.mystery = 1;
@@ -215,8 +233,165 @@ assert.equal(openSave(null).data.level, 1);
   assert.ok(M.claimDaily(S, '2026-03-01').ok && !M.claimDaily(S, '2026-03-01').ok);
 }
 
+// ---------- v3: letters ----------
+assert.ok(letters > SEEDS * 4, `too few letter slots (${letters})`);
+assert.ok(minLetterGap >= T.LETTER_EVERY, `letter slots only ${minLetterGap.toFixed(0)} m apart`);
+
+// ---------- v3: save migration v2 -> v3 (robot ids map to couriers, everything carries) ----------
+{
+  const v2save = {
+    v: 2, best: 8250, cells: 24000, gems: 80, level: 7, xp: 420, tutorialDone: true, runs: 12,
+    settings: { sound: false, music: true, vibe: false, quality: 'low' },
+    items: { headstart: 2, revive: 1, booster: 1, mystery: 1 },
+    upgrades: { magnet: 1, spring: 3, shield: 2, x2: 1, hyper: 2 },
+    chars: { volt: 2, moss: 1, orbit: 5 }, selected: 'orbit',
+    loadout: { headstart: false, revive: true, booster: false },
+    missions: { tier: 3, progress: [999, 40, 2], claimed: [true, false, false] },
+    daily: { last: '2026-11-20', streak: 4 },
+  };
+  const store = mem({ [V2_KEY]: JSON.stringify(v2save), 'voltdash.best': '5' });
+  const o = openSave(store);
+  assert.equal(o.migrated, 'v2', 'v2 save wins over stale v1 keys');
+  const d = o.data;
+  assert.equal(d.v, 3);
+  for (const k of ['best', 'cells', 'gems', 'level', 'xp', 'tutorialDone']) assert.equal(d[k], v2save[k], `v2 ${k} carries over`);
+  assert.deepEqual(d.upgrades, v2save.upgrades);
+  assert.deepEqual(d.items, { ...v2save.items, scooter: 0 });
+  assert.deepEqual(d.chars, { rio: 2, tomas: 1, oskar: 5 }, 'owned/upgraded characters map to couriers');
+  assert.equal(d.selected, 'oskar');
+  assert.deepEqual(d.missions, v2save.missions);
+  assert.deepEqual(d.daily, v2save.daily);
+  assert.deepEqual(d.settings, v2save.settings);
+  assert.equal(d.loadout.headstart, false);
+  assert.equal(d.stats.runs, 12, 'run counter seeds lifetime stats');
+  assert.deepEqual(d.outfits.rio, { own: [0], sel: 0 });
+  assert.ok(store.m.has(SAVE_KEY) && store.m.has(V2_KEY), 'v3 written, v2 kept for older APKs');
+  assert.equal(openSave(store).migrated, '', 'v2 migration runs once');
+  assert.deepEqual(openSave(store).data, d, 'migrated save round-trips');
+  // v1 straight to v3
+  const v1only = openSave(mem({ 'voltdash.best': '900', 'voltdash.cells': '50' }));
+  assert.equal(v1only.migrated, 'v1');
+  assert.equal(v1only.data.v, 3);
+  assert.equal(v1only.data.best, 900);
+  assert.equal(v1only.data.cells, 50);
+  assert.deepEqual(v1only.data.chars, { rio: 1 });
+  // corrupt v3 does not fall back to deleting progress silently: it starts fresh but keeps v2 untouched
+  const bad = mem({ [SAVE_KEY]: '{oops', [V2_KEY]: JSON.stringify(v2save) });
+  assert.equal(openSave(bad).data.best, 0);
+  assert.ok(bad.m.get(V2_KEY).includes('8250'));
+  // hostile values validate
+  const h = sanitize({ outfits: { rio: { own: [2, 2, 9, -1, 'x'], sel: 9 } }, word: { day: 'nope', got: [1, true] }, ach: ['first', 'fake', 'first'], stats: { jumps: -4, meters: 'x' } });
+  assert.deepEqual(h.outfits.rio, { own: [0, 2], sel: 0 });
+  assert.deepEqual(h.word, { day: '', got: [false, true, false, false, false], claimed: false });
+  assert.deepEqual(h.ach, ['first']);
+  assert.equal(h.stats.jumps, 0);
+}
+
+// ---------- v3: Clank's chase state machine ----------
+{
+  const run = (c, secs) => {
+    let ev = null;
+    for (let t = 0; t < secs; t += 1 / 60) ev = c.update(1 / 60) || ev;
+    return ev;
+  };
+  const c = createChase();
+  assert.equal(c.mode, 'away');
+  c.start();
+  assert.equal(c.mode, 'intro');
+  assert.ok(c.gap <= CHASE.NEAR, 'visible right behind at the start');
+  run(c, CHASE.INTRO_TIME + 0.05);
+  assert.equal(c.mode, 'away', 'drops back after the intro');
+  run(c, 8);
+  assert.equal(c.gap, CHASE.FAR, 'fully off-screen once away');
+  assert.equal(c.danger(), 0);
+  // stumble -> close (warning), closes the gap fast
+  assert.equal(c.stumble(), 'close');
+  run(c, 1.2);
+  assert.equal(c.gap, CHASE.NEAR, 'closes in within ~1 s');
+  assert.ok(c.danger() > 0.99);
+  // timeout: ~6 s without stumbles -> falls back, reported once as an escape
+  assert.equal(run(c, CHASE.CLOSE_TIME - 1.2 - 0.1), null, 'no escape before the timeout');
+  assert.equal(c.mode, 'close');
+  assert.equal(run(c, 0.2), 'escaped');
+  assert.equal(c.mode, 'away');
+  assert.equal(run(c, 1), null, 'escape fires once');
+  // stumble -> close -> second stumble while close = caught
+  assert.equal(c.stumble(), 'close');
+  run(c, 3);
+  assert.equal(c.stumble(), 'caught', 'second stumble while close catches you');
+  run(c, 1);
+  assert.equal(c.gap, CHASE.LUNGE, 'lunges onto the runner');
+  // revive / shield save releases; a stumble during the intro counts as the first one
+  c.release();
+  assert.equal(c.mode, 'away');
+  c.start();
+  assert.equal(c.stumble(), 'close');
+  assert.equal(c.stumble(), 'caught');
+  c.hide();
+  assert.equal(c.gap, CHASE.FAR);
+  c.lunge();
+  assert.equal(c.mode, 'caught');
+}
+
+// ---------- v3: combo math ----------
+{
+  assert.equal(C.comboMult(0), 1);
+  assert.equal(C.comboMult(2), 1);
+  assert.equal(C.comboMult(3), 1.25);
+  assert.equal(C.comboMult(9), 1.75);
+  assert.equal(C.comboMult(24), 3);
+  assert.equal(C.comboMult(999), 3, 'combo multiplier caps at x3');
+  for (let n = 1; n < 60; n++) assert.ok(C.comboMult(n) >= C.comboMult(n - 1), 'multiplier never drops as the chain grows');
+  assert.equal(C.comboWord(3), 'NICE');
+  assert.equal(C.comboWord(6), 'GREAT');
+  assert.equal(C.comboWord(10), 'INSANE');
+  assert.equal(C.comboWord(15), 'INSANE');
+  assert.equal(C.comboWord(4), null);
+  let k = { n: 0, last: -99 };
+  k = C.comboAdd(k, 1);
+  assert.equal(k.n, 1);
+  k = C.comboAdd(k, 1 + C.COMBO_WINDOW); // exactly on the window edge still chains
+  assert.equal(k.n, 2);
+  assert.equal(C.comboLive(k, k.last + C.COMBO_WINDOW + 0.01), 0, 'chain expires after the window');
+  k = C.comboAdd(k, k.last + C.COMBO_WINDOW + 0.5);
+  assert.equal(k.n, 1, 'a late trick starts a new chain');
+}
+
+// ---------- v3: outfits, daily word, achievements ----------
+{
+  const S = defaults();
+  assert.equal(M.wearOutfit(S, 'rio', 1).reason, 'funds');
+  S.gems = C.OUTFIT_PRICE[1];
+  assert.ok(M.wearOutfit(S, 'rio', 1).bought && S.gems === 0 && S.outfits.rio.sel === 1);
+  assert.ok(M.wearOutfit(S, 'rio', 0).ok && !M.wearOutfit(S, 'rio', 1).bought, 'owned outfits are free to re-wear');
+  assert.equal(M.wearOutfit(S, 'esme', 1).reason, 'locked', 'locked couriers cannot buy outfits');
+  for (const ch of C.CHARACTERS) assert.equal(ch.outfits.length, C.OUTFIT_PRICE.length);
+  assert.deepEqual(new Set(Object.values(C.CHAR_MAP)), new Set(C.CHARACTERS.map((c) => c.id)), 'every v2 id maps to a distinct courier');
+
+  for (const w of C.WORDS) assert.match(w, /^[A-Z]{5}$/);
+  assert.equal(C.wordOfDay('2026-11-28'), C.wordOfDay('2026-11-28'));
+  assert.ok(new Set(['2026-11-01', '2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05'].map(C.wordOfDay)).size >= 3, 'the word changes from day to day');
+  const day = '2026-11-28';
+  assert.equal(M.claimWord(S, day).ok, false);
+  for (let i = 0; i < 5; i++) assert.equal(M.collectLetter(S, day), i, 'letters fill in order');
+  assert.equal(M.collectLetter(S, day), -1);
+  const gems = S.gems;
+  assert.ok(M.claimWord(S, day).ok && S.gems >= gems + C.WORD_GEMS && S.stats.words === 1);
+  assert.equal(M.claimWord(S, day).ok, false, 'one reward per day');
+  assert.equal(M.wordStatus(S, '2026-11-29').got.filter(Boolean).length, 0, 'a new day starts a new word');
+
+  const run = M.applyRun(S, { score: 10, meters: 2100, cells: 30, gems: 0, stats: { jumps: 3, rolls: 2, bestCombo: 11, caught: 1, scooter: 1, stage: 5 } });
+  const ids = run.unlocked.map((a) => a.id);
+  for (const id of ['first', 'crosstown', 'onfire', 'swept', 'skyway']) assert.ok(ids.includes(id), `${id} unlocks`);
+  assert.ok(!ids.includes('untouch'));
+  assert.equal(M.checkAchievements(S).length, 0, 'achievements pay out once');
+  assert.ok(C.ACHIEVEMENTS.length >= 10 && C.ACHIEVEMENTS.length <= 15);
+  assert.equal(new Set(C.ACHIEVEMENTS.map((a) => a.id)).size, C.ACHIEVEMENTS.length);
+}
+
 console.log(
   `selfcheck ok: ${rows} rows over ${SEEDS} seeds x ${STAGES} stages; every row passable at meet ` +
     `(max ${maxBlocked} blocked lanes, ${walls} full-width walls); ${laserChecks} laser timing samples; ` +
-    `stage 2 after ${t.toFixed(0)} s; gap jump window ${window.toFixed(1)} m; economy + save/migration checks passed`,
+    `stage 2 after ${t.toFixed(0)} s; gap jump window ${window.toFixed(1)} m; economy + save/migration checks passed; ` +
+    `${letters} letter slots (none inside obstacles); chase, combo, word, outfit and achievement checks passed`,
 );
